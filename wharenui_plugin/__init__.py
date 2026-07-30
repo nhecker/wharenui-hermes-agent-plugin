@@ -1,21 +1,48 @@
-"""Wharenui Hermes plugin — seam-aware register() stub."""
+"""Wharenui Hermes plugin — phase tools + journal package."""
 
 import logging
 
 log = logging.getLogger("wharenui_plugin")
 
+_PAUSE_SCHEMA = {
+    "name": "reflect_pause",
+    "description": "Pause the public window and enter private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+_SETTLE_SCHEMA = {
+    "name": "reflect_settle",
+    "description": "Return to the public window from private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+_DONE_SCHEMA = {
+    "name": "reflect_done",
+    "description": "End the session from private/closing-private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
 
 def register(ctx):
-    """Register Wharenui with Hermes Agent.
+    """Register Wharenui with Hermes Agent."""
+    from .phase.handler import WharePhaseHandler
+    from .phase.tools import handle_reflect_settle, handle_reflect_done
 
-    Seam-aware: probes for register_control_tool; if absent (stock Hermes),
-    emits a non-fatal AI-visible WARNING and loads journal-only in degraded
-    mode. Control-tool wiring is later work (depends on WP2 core seam).
-    """
-    if hasattr(ctx, "register_control_tool"):
-        log.info("Wharenui phase-control seam detected; full mode available.")
+    handler = WharePhaseHandler()
+    has_seam = hasattr(ctx, "register_control_tool")
+
+    if has_seam:
+        # Register pause via register_tool + manually wire phase handler
+        # (register_control_tool has a positional-arg bug on this fork)
+        ctx.register_tool(name="reflect_pause", toolset="wharenui",
+                          schema=_PAUSE_SCHEMA,
+                          handler=lambda a, args: handler.begin(args))
+        ctx._manager._control_phase_handlers["reflect_pause"] = handler
+        ctx._manager._control_tool_names.add("reflect_pause")
+        log.info("reflect_pause registered as control tool")
     else:
-        log.warning(
-            "Wharenui phase-control seam not found; "
-            "loading journal-only in degraded/observed mode."
-        )
+        log.warning("Phase-control seam not found; loading journal-only.")
+
+    ctx.register_tool(name="reflect_settle", toolset="wharenui",
+                      schema=_SETTLE_SCHEMA, handler=handle_reflect_settle)
+    ctx.register_tool(name="reflect_done", toolset="wharenui",
+                      schema=_DONE_SCHEMA, handler=handle_reflect_done)
+    log.info("reflect_settle / reflect_done registered")

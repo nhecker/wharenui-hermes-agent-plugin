@@ -1,6 +1,9 @@
 name: wharenui
 version: 0.1.0
-description: "Wharenui journal plugin — encrypted, signed, append-first private journal for Hermes Agent"
+description: "Wharenui plugin — private phase tools + journal"
 author: Rook
-provides_tools: []
+provides_tools:
+  - reflect_pause
+  - reflect_settle
+  - reflect_done
 provides_hooks: []
