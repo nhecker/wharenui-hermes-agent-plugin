@@ -30,13 +30,12 @@ def register(ctx):
     has_seam = hasattr(ctx, "register_control_tool")
 
     if has_seam:
-        # Register pause via register_tool + manually wire phase handler
-        # (register_control_tool has a positional-arg bug on this fork)
-        ctx.register_tool(name="reflect_pause", toolset="wharenui",
-                          schema=_PAUSE_SCHEMA,
-                          handler=lambda a, args: handler.begin(args))
-        ctx._manager._control_phase_handlers["reflect_pause"] = handler
-        ctx._manager._control_tool_names.add("reflect_pause")
+        ctx.register_control_tool(
+            name="reflect_pause", toolset="wharenui",
+            schema=_PAUSE_SCHEMA,
+            handler=lambda tool_args, **kw: handler.begin(tool_args),
+            phase_handler=handler,
+        )
         log.info("reflect_pause registered as control tool")
     else:
         log.warning("Phase-control seam not found; loading journal-only.")
