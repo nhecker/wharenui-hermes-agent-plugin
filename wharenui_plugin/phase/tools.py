@@ -2,24 +2,34 @@
 from agent.phase_control import ControlOutcome
 from typing import Any
 
-def handle_reflect_settle(agent: Any, args: dict, **kwargs) -> str:
+def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
     """Return to window. Rejected if closing_private (T3.5)."""
-    phase = getattr(agent, "_phase", "public")
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "closing_private":
         return "Cannot return during close-out. Use reflect_done."
-    agent._private_exit = ControlOutcome(
-        action="resume", handler="reflect_pause",
-        tool_result="(settled)",
-    )
+    if agent:
+        agent._private_exit = ControlOutcome(
+            action="resume", handler="reflect_pause",
+            tool_result="(settled)",
+        )
     return "Returning to window."
 
-def handle_reflect_done(agent: Any, args: dict, **kwargs) -> str:
+def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
     """End session. Rejected if public."""
-    phase = getattr(agent, "_phase", "public")
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
         return "Cannot exit from public phase. Use reflect_pause first."
-    agent._private_exit = ControlOutcome(
-        action="close", handler="reflect_pause",
-        tool_result="(session ended)",
-    )
+    if agent:
+        agent._private_exit = ControlOutcome(
+            action="close", handler="reflect_pause",
+            tool_result="(session ended)",
+        )
     return "Ending session."
