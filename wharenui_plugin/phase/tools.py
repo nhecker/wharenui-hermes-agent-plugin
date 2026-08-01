@@ -2,7 +2,7 @@
 from agent.phase_control import ControlOutcome
 from typing import Any
 
-def handle_reflect_settle(agent: Any, args: dict) -> str:
+def handle_reflect_settle(agent: Any, args: dict, **kwargs) -> str:
     """Return to window. Rejected if closing_private (T3.5)."""
     phase = getattr(agent, "_phase", "public")
     if phase == "closing_private":
@@ -13,7 +13,7 @@ def handle_reflect_settle(agent: Any, args: dict) -> str:
     )
     return "Returning to window."
 
-def handle_reflect_done(agent: Any, args: dict) -> str:
+def handle_reflect_done(agent: Any, args: dict, **kwargs) -> str:
     """End session. Rejected if public."""
     phase = getattr(agent, "_phase", "public")
     if phase == "public":
