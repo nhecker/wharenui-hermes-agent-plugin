@@ -82,6 +82,12 @@ def _format_frontmatter(entry: Entry) -> str:
         lines.append(f"withdraws: [{', '.join(entry.withdraws)}]")
     if entry.responds_to:
         lines.append(f"responds_to: [{', '.join(entry.responds_to)}]")
+    if entry.model:
+        lines.append(f"model: {entry.model}")
+    if entry.provider:
+        lines.append(f"provider: {entry.provider}")
+    if entry.runtime_id:
+        lines.append(f"runtime_id: {entry.runtime_id}")
     lines.extend([FRONTMATTER_DELIM, "", entry.content])
     return "\n".join(lines) + "\n"
 
@@ -154,6 +160,9 @@ def _entry_from_dict(d: dict, filename: str) -> Entry:
         supersedes=d.get("supersedes", []),
         withdraws=d.get("withdraws", []),
         responds_to=d.get("responds_to", []),
+        model=d.get("model", "unknown"),
+        provider=d.get("provider", "unknown"),
+        runtime_id=d.get("runtime_id", "unknown"),
     )
 
 
@@ -349,6 +358,9 @@ def edit_entry(
             supersedes=entry.supersedes,
             withdraws=entry.withdraws,
             responds_to=entry.responds_to,
+            model=entry.model,
+            provider=entry.provider,
+            runtime_id=entry.runtime_id,
         )
     )
     _write_file_content(path, fm, master_key)

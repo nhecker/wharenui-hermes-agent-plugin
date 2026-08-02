@@ -50,6 +50,9 @@ class Entry:
     supersedes: list[str] = field(default_factory=list)
     withdraws: list[str] = field(default_factory=list)
     responds_to: list[str] = field(default_factory=list)
+    model: str = "unknown"
+    provider: str = "unknown"
+    runtime_id: str = "unknown"
 
     def __post_init__(self):
         if self.kind not in ENTRY_KINDS:

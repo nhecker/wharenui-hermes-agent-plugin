@@ -40,7 +40,7 @@ def load_signing_key(key_path: Path) -> Optional[ed25519.Ed25519PrivateKey]:
     """Load an Ed25519 private key from file. Returns None if missing."""
     if not key_path.exists():
         return None
-    raw = key_path.read_bytes().strip()
+    raw = key_path.read_bytes()
     return ed25519.Ed25519PrivateKey.from_private_bytes(raw)
 
 
