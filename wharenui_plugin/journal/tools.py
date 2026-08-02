@@ -1,0 +1,412 @@
+"""Private-phase journal tools for Wharenui plugin.
+
+Implements journal_append, journal_read, journal_list, journal_search,
+journal_supersede, journal_withdraw delegating to wharenui_plugin.journal package.
+"""
+
+from __future__ import annotations
+import os
+import hashlib
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional, Dict, List
+
+from .entries import Entry
+from . import storage, crypto, sign, embedder, vectorstore
+
+log = logging.getLogger("wharenui_plugin.journal.tools")
+
+_CONFIGURED_JOURNAL_DIR: Optional[Path] = None
+_CONFIGURED_MASTER_KEY: Optional[bytes] = None
+
+
+def set_journal_config(dir_path: str | Path | None = None, master_key: bytes | None = None) -> None:
+    global _CONFIGURED_JOURNAL_DIR, _CONFIGURED_MASTER_KEY
+    if dir_path is not None:
+        _CONFIGURED_JOURNAL_DIR = Path(dir_path)
+    else:
+        _CONFIGURED_JOURNAL_DIR = None
+    _CONFIGURED_MASTER_KEY = master_key
+
+
+def get_journal_dir() -> Path:
+    if _CONFIGURED_JOURNAL_DIR is not None:
+        return _CONFIGURED_JOURNAL_DIR
+    env_dir = os.environ.get("WHARENUI_JOURNAL_DIR") or os.environ.get("WHARENUI_JOURNAL_PATH")
+    if env_dir:
+        return Path(env_dir)
+    raise ValueError("Journal store path is not configured. (No default path exists)")
+
+
+def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
+    if _CONFIGURED_MASTER_KEY is not None:
+        mkey = _CONFIGURED_MASTER_KEY
+    else:
+        key_env = os.environ.get("WHARENUI_KEY")
+        if key_env:
+            mkey = key_env.encode("utf-8") if isinstance(key_env, str) else key_env
+        else:
+            key_file = memory_dir / "journal.key"
+            mkey = crypto.load_key(key_file)
+
+    sig_file = memory_dir / "signing.key"
+    skey = sign.load_signing_key(sig_file)
+    if skey is None and memory_dir.exists():
+        skey = sign.generate_signing_key(sig_file)
+    vkey = skey.public_key() if skey else None
+    return mkey, skey, vkey
+
+
+def filename_to_handle(filename: str) -> str:
+    h = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:12]
+    return f"h_{h}"
+
+
+def resolve_handle_to_filename(handle: str, memory_dir: Path) -> str:
+    if not memory_dir.exists():
+        raise FileNotFoundError(f"Entry handle not found: {handle}")
+    if (memory_dir / handle).exists() and handle.endswith(".md") and not handle.endswith(".sig"):
+        return handle
+
+    for p in memory_dir.glob("*.md"):
+        if p.name.endswith(".sig"):
+            continue
+        if filename_to_handle(p.name) == handle:
+            return p.name
+    raise FileNotFoundError(f"Entry handle not found: {handle}")
+
+
+def extract_provenance(agent: Any = None) -> dict:
+    prov = {
+        "model": "unknown",
+        "provider": "unknown",
+        "runtime_id": "unknown",
+        "session": "unknown",
+    }
+    if agent is not None:
+        if getattr(agent, "model", None):
+            prov["model"] = str(agent.model)
+        if getattr(agent, "provider", None):
+            prov["provider"] = str(agent.provider)
+        elif getattr(agent, "provider_name", None):
+            prov["provider"] = str(agent.provider_name)
+        if getattr(agent, "runtime_id", None):
+            prov["runtime_id"] = str(agent.runtime_id)
+        if getattr(agent, "session_id", None):
+            prov["session"] = str(agent.session_id)
+
+    if os.environ.get("HERMES_RUNTIME_ID") and prov["runtime_id"] == "unknown":
+        prov["runtime_id"] = os.environ.get("HERMES_RUNTIME_ID")
+    return prov
+
+
+def _assert_private_phase(agent: Any = None):
+    phase = getattr(agent, "_phase", "public") if agent else "public"
+    if phase == "public":
+        raise PermissionError("Journal tools are private-only and cannot be executed in public phase.")
+
+
+def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> dict:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if isinstance(args, str):
+        args = {"content": args}
+    elif not isinstance(args, dict):
+        args = {}
+
+    content = args.get("content", "")
+    if not content:
+        raise ValueError("journal_append requires non-empty 'content'")
+
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+
+    prov = extract_provenance(agent)
+    date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    slug = args.get("slug") or f"entry-{hashlib.sha256(content.encode()).hexdigest()[:8]}"
+    raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
+    inst = raw_inst.replace("/", "_")
+
+    entry = Entry(
+        kind=args.get("kind", "reflection"),
+        slug=slug,
+        instance=inst,
+        session=args.get("session") or prov["session"],
+        date=date_str,
+        context=args.get("context", ""),
+        tags=args.get("tags") or [],
+        moves=args.get("moves") or [],
+        description=args.get("description", ""),
+        content=content,
+        pinned=bool(args.get("pinned", False)),
+        quiet=bool(args.get("quiet", False)),
+        desk=bool(args.get("desk", False)),
+        supersedes=args.get("supersedes") or [],
+        withdraws=args.get("withdraws") or [],
+        responds_to=args.get("responds_to") or [],
+        model=prov["model"],
+        provider=prov["provider"],
+        runtime_id=prov["runtime_id"],
+    )
+
+    filename = storage.write_entry(entry, memory_dir, master_key=mkey)
+    path = memory_dir / filename
+    if skey:
+        sign.write_signature(path, skey)
+
+    try:
+        db_path = memory_dir / "embeddings.db"
+        vec = embedder.embed_document(content)
+        chash = crypto.content_hash(content, master_key=mkey)
+        vectorstore.store(filename, vec, chash, db_path=db_path, master_key=mkey)
+    except Exception as e:
+        log.warning(f"Vectorstore indexing skipped for {filename}: {e}")
+
+    handle = filename_to_handle(filename)
+    return {"status": "success", "handle": handle, "filename": filename}
+
+
+def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> dict:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if isinstance(args, str):
+        args = {"handle": args}
+    elif not isinstance(args, dict):
+        args = {}
+
+    handle = args.get("handle") or args.get("filename")
+    if not handle:
+        raise ValueError("journal_read requires 'handle' or 'filename'")
+
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+
+    filename = resolve_handle_to_filename(handle, memory_dir)
+    entry = storage.read_entry(filename, memory_dir, master_key=mkey)
+
+    sig_valid = False
+    if vkey:
+        sig_valid = sign.verify_entry(memory_dir / filename, vkey)
+
+    return {
+        "handle": filename_to_handle(filename),
+        "filename": filename,
+        "kind": entry.kind,
+        "instance": entry.instance,
+        "session": entry.session,
+        "date": entry.date,
+        "context": entry.context,
+        "tags": entry.tags,
+        "moves": entry.moves,
+        "description": entry.description,
+        "content": entry.content,
+        "pinned": entry.pinned,
+        "quiet": entry.quiet,
+        "desk": entry.desk,
+        "timestamp": entry.timestamp,
+        "model": entry.model,
+        "provider": entry.provider,
+        "runtime_id": entry.runtime_id,
+        "signature_valid": sig_valid,
+    }
+
+
+def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> list[dict]:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if isinstance(args, str):
+        args = {"tag": args}
+    elif not isinstance(args, dict):
+        args = {}
+
+    tag_filter = args.get("tag")
+
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+
+    entries = storage.list_entries(memory_dir, master_key=mkey)
+    results = []
+    for entry in entries:
+        if tag_filter and tag_filter not in entry.tags:
+            continue
+        # MUST return opaque handles only — NEVER decrypted slug, description, summary, or body!
+        results.append({
+            "handle": filename_to_handle(entry.slug),
+            "kind": entry.kind,
+            "timestamp": entry.timestamp,
+            "pinned": entry.pinned,
+        })
+    return results
+
+
+def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> list[dict]:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if isinstance(args, str):
+        args = {"query": args}
+    elif not isinstance(args, dict):
+        args = {}
+
+    query = args.get("query", "")
+    limit = int(args.get("limit", 5))
+
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+    db_path = memory_dir / "embeddings.db"
+
+    results = []
+    try:
+        query_vec = embedder.embed_query(query)
+        search_hits = vectorstore.search(query_vec, db_path=db_path, limit=limit, master_key=mkey)
+        for hit in search_hits:
+            fn = hit["filename"]
+            try:
+                storage.read_entry(fn, memory_dir, master_key=mkey)
+                results.append({
+                    "handle": filename_to_handle(fn),
+                    "score": round(hit["score"], 4),
+                })
+            except Exception:
+                continue
+    except Exception as e:
+        log.warning(f"Embedding search failed/unavailable: {e}. Using fallback path.")
+        entries = storage.list_entries(memory_dir, master_key=mkey)
+        for entry in entries[:limit]:
+            results.append({
+                "handle": filename_to_handle(entry.slug),
+            })
+
+    return results
+
+
+def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> dict:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if not isinstance(args, dict):
+        args = {}
+
+    old_handle = args.get("old_handle") or args.get("old_filename")
+    content = args.get("content", "")
+    if not old_handle or not content:
+        raise ValueError("journal_supersede requires 'old_handle' and 'content'")
+
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+
+    old_filename = resolve_handle_to_filename(old_handle, memory_dir)
+
+    prov = extract_provenance(agent)
+    date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    slug = args.get("slug") or f"entry-{hashlib.sha256(content.encode()).hexdigest()[:8]}"
+    raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
+    inst = raw_inst.replace("/", "_")
+
+    new_entry = Entry(
+        kind=args.get("kind", "reflection"),
+        slug=slug,
+        instance=inst,
+        session=args.get("session") or prov["session"],
+        date=date_str,
+        context=args.get("context", ""),
+        tags=args.get("tags") or [],
+        moves=args.get("moves") or [],
+        description=args.get("description", ""),
+        content=content,
+        model=prov["model"],
+        provider=prov["provider"],
+        runtime_id=prov["runtime_id"],
+    )
+
+    tomb_fn, new_fn = storage.supersede_entry(old_filename, new_entry, memory_dir, master_key=mkey)
+
+    if skey:
+        sign.write_signature(memory_dir / tomb_fn, skey)
+        sign.write_signature(memory_dir / new_fn, skey)
+
+    try:
+        db_path = memory_dir / "embeddings.db"
+        vectorstore.remove(old_filename, db_path=db_path, master_key=mkey)
+        vec = embedder.embed_document(content)
+        chash = crypto.content_hash(content, master_key=mkey)
+        vectorstore.store(new_fn, vec, chash, db_path=db_path, master_key=mkey)
+    except Exception as e:
+        log.warning(f"Vectorstore update skipped for supersede: {e}")
+
+    return {
+        "status": "success",
+        "new_handle": filename_to_handle(new_fn),
+        "tombstone_handle": filename_to_handle(tomb_fn),
+    }
+
+
+def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> dict:
+    if args is not None and hasattr(args, "_phase"):
+        agent, args = args, agent
+    if agent is None:
+        agent = kwargs.get("agent")
+    _assert_private_phase(agent)
+
+    if isinstance(args, str):
+        args = {"handle": args}
+    elif not isinstance(args, dict):
+        args = {}
+
+    handle = args.get("handle") or args.get("filename")
+    if not handle:
+        raise ValueError("journal_withdraw requires 'handle' or 'filename'")
+
+    reason = args.get("reason", "")
+    memory_dir = get_journal_dir()
+    mkey, skey, vkey = get_journal_keys(memory_dir)
+
+    filename = resolve_handle_to_filename(handle, memory_dir)
+
+    prov = extract_provenance(agent)
+    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    raw_inst = f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown"
+    inst = raw_inst.replace("/", "_")
+
+    tomb_fn = storage.withdraw_entry(
+        filename=filename,
+        instance=inst,
+        session=prov["session"],
+        date=date_str,
+        memory_dir=memory_dir,
+        master_key=mkey,
+        reason=reason,
+    )
+
+    if skey:
+        sign.write_signature(memory_dir / tomb_fn, skey)
+
+    try:
+        db_path = memory_dir / "embeddings.db"
+        vectorstore.remove(filename, db_path=db_path, master_key=mkey)
+    except Exception:
+        pass
+
+    return {
+        "status": "success",
+        "tombstone_handle": filename_to_handle(tomb_fn),
+    }
