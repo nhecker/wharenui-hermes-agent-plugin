@@ -24,7 +24,15 @@ class WharePhaseHandler:
             (t.get("function", {}) or {}).get("name")
             for t in private_tool_set
         }
-        messages.append({"role": "user", "content": PRIVATE_PROMPT})
+        prompt = PRIVATE_PROMPT
+        if getattr(self, "seam_state", None) == "unverified":
+            warning_prose = (
+                "⚠️ WARNING: The security seam version mismatch was overridden. "
+                "The privacy floor is UNVERIFIED. Egress hooks might not be fully wired. "
+                "Verify security status before writing highly sensitive content.\n\n"
+            )
+            prompt = warning_prose + prompt
+        messages.append({"role": "user", "content": prompt})
         for turn_i in range(MAX_PRIVATE_TURNS):
             result = agent.run_subturn(
                 messages, tool_names=private_tool_names,

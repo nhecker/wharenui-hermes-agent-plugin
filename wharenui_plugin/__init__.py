@@ -1,8 +1,11 @@
 """Wharenui Hermes plugin — phase tools + journal package."""
-
 import logging
 
 log = logging.getLogger("wharenui_plugin")
+
+PHASE_CONTROL_API_VERSION = 1
+SEAM_STATE = "ok"
+SEAM_VERSION_PAIR = ""
 
 _PAUSE_SCHEMA = {
     "name": "reflect_pause",
@@ -111,6 +114,7 @@ _JOURNAL_WITHDRAW_SCHEMA = {
 
 def register(ctx):
     """Register Wharenui with Hermes Agent."""
+    import os
     from .phase.handler import WharePhaseHandler
     from .phase.tools import handle_reflect_settle, handle_reflect_done
     from .journal.tools import (
@@ -133,13 +137,26 @@ def register(ctx):
             phase_handler=handler,
         )
         log.info("reflect_pause registered as control tool")
+        ctx.register_tool(name="reflect_settle", toolset="wharenui",
+                          schema=_SETTLE_SCHEMA, handler=handle_reflect_settle)
+        ctx.register_tool(name="reflect_done", toolset="wharenui",
+                          schema=_DONE_SCHEMA, handler=handle_reflect_done)
     else:
-        log.warning("Phase-control seam not found; loading journal-only.")
-
-    ctx.register_tool(name="reflect_settle", toolset="wharenui",
-                      schema=_SETTLE_SCHEMA, handler=handle_reflect_settle)
-    ctx.register_tool(name="reflect_done", toolset="wharenui",
-                      schema=_DONE_SCHEMA, handler=handle_reflect_done)
+        if os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").lower() != "true":
+            raise RuntimeError(
+                "Wharenui plugin detected stock Hermes with no phase-control seam. "
+                "To run in 'open notebook' mode (journaling publicly), set WHARENUI_OPEN_NOTEBOOK=true."
+            )
+        import wharenui_plugin
+        wharenui_plugin.SEAM_STATE = "absent"
+        
+        warning = " [WARNING: Seam is absent. Entries are written in the open.]"
+        _JOURNAL_APPEND_SCHEMA["description"] += warning
+        _JOURNAL_READ_SCHEMA["description"] += warning
+        _JOURNAL_LIST_SCHEMA["description"] += warning
+        _JOURNAL_SEARCH_SCHEMA["description"] += warning
+        _JOURNAL_SUPERSEDE_SCHEMA["description"] += warning
+        _JOURNAL_WITHDRAW_SCHEMA["description"] += warning
 
     ctx.register_tool(name="journal_append", toolset="wharenui",
                       schema=_JOURNAL_APPEND_SCHEMA, handler=handle_journal_append)
