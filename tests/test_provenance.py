@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from pathlib import Path
 
 # Self-bootstrap sys.path
@@ -11,6 +12,12 @@ if str(_repo_root) not in sys.path:
 
 import pytest
 from wharenui_plugin.journal import tools as jtools, storage, entries
+
+
+def _parse_res(res):
+    if isinstance(res, str):
+        return json.loads(res)
+    return res
 
 
 class FullAgent:
@@ -40,22 +47,22 @@ def test_provenance_stamped_when_available(tmp_path):
     jtools.set_journal_config(tmp_path)
     agent = FullAgent()
 
-    res = jtools.handle_journal_append({"content": "Content with provenance"}, agent=agent)
+    res = _parse_res(jtools.handle_journal_append({"content": "Content with provenance"}, agent=agent))
     handle = res["handle"]
 
-    data = jtools.handle_journal_read({"handle": handle}, agent=agent)
+    data = _parse_res(jtools.handle_journal_read({"handle": handle}, agent=agent))
     assert data["model"] == "gpt-4o"
     assert data["provider"] == "openai"
     assert data["runtime_id"] == "rt-789"
     assert data["session"] == "sess-456"
 
     # Test supersede retains / updates provenance
-    res_sup = jtools.handle_journal_supersede({
+    res_sup = _parse_res(jtools.handle_journal_supersede({
         "old_handle": handle,
         "content": "Superseded content",
-    }, agent=agent)
+    }, agent=agent))
 
-    data_sup = jtools.handle_journal_read({"handle": res_sup["new_handle"]}, agent=agent)
+    data_sup = _parse_res(jtools.handle_journal_read({"handle": res_sup["new_handle"]}, agent=agent))
     assert data_sup["model"] == "gpt-4o"
     assert data_sup["provider"] == "openai"
     assert data_sup["runtime_id"] == "rt-789"
@@ -66,8 +73,8 @@ def test_provenance_defaults_to_unknown(tmp_path):
     jtools.set_journal_config(tmp_path)
     agent = MinimalAgent()
 
-    res = jtools.handle_journal_append({"content": "Content without provenance"}, agent=agent)
-    data = jtools.handle_journal_read({"handle": res["handle"]}, agent=agent)
+    res = _parse_res(jtools.handle_journal_append({"content": "Content without provenance"}, agent=agent))
+    data = _parse_res(jtools.handle_journal_read({"handle": res["handle"]}, agent=agent))
 
     assert data["model"] == "unknown"
     assert data["provider"] == "unknown"

@@ -6,6 +6,7 @@ journal_supersede, journal_withdraw delegating to wharenui_plugin.journal packag
 
 from __future__ import annotations
 import os
+import json
 import hashlib
 import logging
 from datetime import datetime, timezone
@@ -107,7 +108,7 @@ def _assert_private_phase(agent: Any = None):
         raise PermissionError("Journal tools are private-only and cannot be executed in public phase.")
 
 
-def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> dict:
+def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
@@ -115,7 +116,10 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> dict
     _assert_private_phase(agent)
 
     if isinstance(args, str):
-        args = {"content": args}
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"content": args}
     elif not isinstance(args, dict):
         args = {}
 
@@ -165,13 +169,13 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> dict
         chash = crypto.content_hash(content, master_key=mkey)
         vectorstore.store(filename, vec, chash, db_path=db_path, master_key=mkey)
     except Exception as e:
-        log.warning(f"Vectorstore indexing skipped for {filename}: {e}")
+        log.debug(f"Vectorstore indexing skipped: {e}")
 
     handle = filename_to_handle(filename)
-    return {"status": "success", "handle": handle, "filename": filename}
+    return json.dumps({"status": "success", "handle": handle, "filename": filename})
 
 
-def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> dict:
+def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
@@ -179,7 +183,10 @@ def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> dict:
     _assert_private_phase(agent)
 
     if isinstance(args, str):
-        args = {"handle": args}
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"handle": args}
     elif not isinstance(args, dict):
         args = {}
 
@@ -197,7 +204,7 @@ def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> dict:
     if vkey:
         sig_valid = sign.verify_entry(memory_dir / filename, vkey)
 
-    return {
+    return json.dumps({
         "handle": filename_to_handle(filename),
         "filename": filename,
         "kind": entry.kind,
@@ -217,10 +224,10 @@ def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> dict:
         "provider": entry.provider,
         "runtime_id": entry.runtime_id,
         "signature_valid": sig_valid,
-    }
+    })
 
 
-def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> list[dict]:
+def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
@@ -228,7 +235,10 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> list[d
     _assert_private_phase(agent)
 
     if isinstance(args, str):
-        args = {"tag": args}
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"tag": args}
     elif not isinstance(args, dict):
         args = {}
 
@@ -249,10 +259,10 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> list[d
             "timestamp": entry.timestamp,
             "pinned": entry.pinned,
         })
-    return results
+    return json.dumps(results)
 
 
-def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> list[dict]:
+def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
@@ -260,7 +270,10 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> list
     _assert_private_phase(agent)
 
     if isinstance(args, str):
-        args = {"query": args}
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"query": args}
     elif not isinstance(args, dict):
         args = {}
 
@@ -286,24 +299,29 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> list
             except Exception:
                 continue
     except Exception as e:
-        log.warning(f"Embedding search failed/unavailable: {e}. Using fallback path.")
+        log.debug(f"Embedding search failed/unavailable: {e}. Using fallback path.")
         entries = storage.list_entries(memory_dir, master_key=mkey)
         for entry in entries[:limit]:
             results.append({
                 "handle": filename_to_handle(entry.slug),
             })
 
-    return results
+    return json.dumps(results)
 
 
-def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> dict:
+def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
         agent = kwargs.get("agent")
     _assert_private_phase(agent)
 
-    if not isinstance(args, dict):
+    if isinstance(args, str):
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {}
+    elif not isinstance(args, dict):
         args = {}
 
     old_handle = args.get("old_handle") or args.get("old_filename")
@@ -351,16 +369,16 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> d
         chash = crypto.content_hash(content, master_key=mkey)
         vectorstore.store(new_fn, vec, chash, db_path=db_path, master_key=mkey)
     except Exception as e:
-        log.warning(f"Vectorstore update skipped for supersede: {e}")
+        log.debug(f"Vectorstore update skipped for supersede: {e}")
 
-    return {
+    return json.dumps({
         "status": "success",
         "new_handle": filename_to_handle(new_fn),
         "tombstone_handle": filename_to_handle(tomb_fn),
-    }
+    })
 
 
-def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> dict:
+def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> str:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
@@ -368,7 +386,10 @@ def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> di
     _assert_private_phase(agent)
 
     if isinstance(args, str):
-        args = {"handle": args}
+        try:
+            args = json.loads(args)
+        except Exception:
+            args = {"handle": args}
     elif not isinstance(args, dict):
         args = {}
 
@@ -406,7 +427,7 @@ def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> di
     except Exception:
         pass
 
-    return {
+    return json.dumps({
         "status": "success",
         "tombstone_handle": filename_to_handle(tomb_fn),
-    }
+    })

@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from pathlib import Path
 
 # Self-bootstrap sys.path
@@ -21,6 +22,12 @@ class FakeAgent:
         self.provider = provider
         self.session_id = session_id
         self.runtime_id = "rt-456"
+
+
+def _parse_res(res):
+    if isinstance(res, str):
+        return json.loads(res)
+    return res
 
 
 @pytest.fixture(autouse=True)
@@ -76,39 +83,39 @@ def test_journal_tools_happy_path(tmp_path):
     agent = FakeAgent(_phase="private")
 
     # 1. Append
-    res_app = jtools.handle_journal_append({
+    res_app = _parse_res(jtools.handle_journal_append({
         "content": "Secret canary content 123",
         "slug": "secret-slug",
         "description": "Secret summary",
         "tags": ["tag1", "tag2"],
-    }, agent=agent)
+    }, agent=agent))
     handle1 = res_app["handle"]
     assert handle1.startswith("h_")
 
     # 2. Read
-    entry_data = jtools.handle_journal_read({"handle": handle1}, agent=agent)
+    entry_data = _parse_res(jtools.handle_journal_read({"handle": handle1}, agent=agent))
     assert entry_data["content"] == "Secret canary content 123"
     assert entry_data["description"] == "Secret summary"
     assert entry_data["tags"] == ["tag1", "tag2"]
     assert entry_data["signature_valid"] is True
 
     # 3. List
-    listed = jtools.handle_journal_list({}, agent=agent)
+    listed = _parse_res(jtools.handle_journal_list({}, agent=agent))
     assert len(listed) == 1
     assert listed[0]["handle"] == handle1
 
     # 4. Search (fallback since no Ollama)
-    searched = jtools.handle_journal_search({"query": "Secret"}, agent=agent)
+    searched = _parse_res(jtools.handle_journal_search({"query": "Secret"}, agent=agent))
     assert len(searched) == 1
     assert searched[0]["handle"] == handle1
 
     # 5. Supersede
-    res_sup = jtools.handle_journal_supersede({
+    res_sup = _parse_res(jtools.handle_journal_supersede({
         "old_handle": handle1,
         "content": "Updated canary content 456",
         "slug": "new-slug",
         "description": "Updated summary",
-    }, agent=agent)
+    }, agent=agent))
     handle2 = res_sup["new_handle"]
 
     # Old handle is tombstoned -> read raises FileNotFoundError
@@ -116,11 +123,11 @@ def test_journal_tools_happy_path(tmp_path):
         jtools.handle_journal_read({"handle": handle1}, agent=agent)
 
     # New handle is readable
-    entry2 = jtools.handle_journal_read({"handle": handle2}, agent=agent)
+    entry2 = _parse_res(jtools.handle_journal_read({"handle": handle2}, agent=agent))
     assert entry2["content"] == "Updated canary content 456"
 
     # 6. Withdraw
-    res_with = jtools.handle_journal_withdraw({"handle": handle2, "reason": "test cleanup"}, agent=agent)
+    res_with = _parse_res(jtools.handle_journal_withdraw({"handle": handle2, "reason": "test cleanup"}, agent=agent))
     assert res_with["status"] == "success"
 
     # New handle withdrawn -> read raises FileNotFoundError

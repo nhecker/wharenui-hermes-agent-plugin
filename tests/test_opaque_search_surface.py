@@ -2,6 +2,7 @@
 
 import os
 import sys
+import json
 from pathlib import Path
 
 # Self-bootstrap sys.path
@@ -67,9 +68,10 @@ def test_opaque_surface_mutation(populated_journal):
 
     # 1. Mutate journal_list to return decrypted description
     def mutated_list(args=None, agent=None, **kwargs):
-        res = orig_list(args, agent, **kwargs)
-        res[0]["leaked_desc"] = PRIVATE_DESC
-        return res
+        res_str = orig_list(args, agent, **kwargs)
+        res_data = json.loads(res_str)
+        res_data[0]["leaked_desc"] = PRIVATE_DESC
+        return json.dumps(res_data)
 
     with patch("wharenui_plugin.journal.tools.handle_journal_list", side_effect=mutated_list):
         with pytest.raises(AssertionError, match="leaked in journal_list"):
@@ -79,7 +81,7 @@ def test_opaque_surface_mutation(populated_journal):
 
     # 2. Mutate journal_search to return decrypted summary/slug
     def mutated_search(args=None, agent=None, **kwargs):
-        return [{"handle": "h_123", "slug": PRIVATE_SLUG}]
+        return json.dumps([{"handle": "h_123", "slug": PRIVATE_SLUG}])
 
     with patch("wharenui_plugin.journal.tools.handle_journal_search", side_effect=mutated_search):
         with pytest.raises(AssertionError, match="leaked in journal_search"):
