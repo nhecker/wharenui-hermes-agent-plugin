@@ -29,7 +29,7 @@ cd wharenui-hermes-agent
 git checkout wharenui-integration
 
 # Run the installer
-./install.sh
+./setup-hermes.sh
 ```
 
 Or if you already have Hermes installed, you can switch to the fork:
