@@ -24,6 +24,12 @@ FRONTMATTER_DELIM = "---"
 # and degraded operation.
 
 
+def _get_stem(name: str) -> str:
+    if name.endswith(".md"):
+        return name[:-3]
+    return name
+
+
 def _read_file_content(path: Path, master_key: Optional[bytes] = None) -> str:
     """Read a file, decrypting if encrypted.
 
@@ -33,11 +39,26 @@ def _read_file_content(path: Path, master_key: Optional[bytes] = None) -> str:
     """
     raw = path.read_bytes()
     if crypto.is_encrypted(raw):
-        try:
-            entry_key = crypto.derive_key(path.name, master_key)
-            text = crypto.decrypt(raw, entry_key)
-        except Exception:
-            text = crypto.decrypt(raw, master_key)
+        if master_key:
+            # 1. Try deriving from stem (new style)
+            try:
+                stem = _get_stem(path.name)
+                entry_key = crypto.derive_key(stem, master_key)
+                return crypto.decrypt(raw, entry_key).replace("\r\n", "\n")
+            except Exception:
+                pass
+            # 2. Try deriving from literal filename (old style)
+            try:
+                entry_key = crypto.derive_key(path.name, master_key)
+                return crypto.decrypt(raw, entry_key).replace("\r\n", "\n")
+            except Exception:
+                pass
+            # 3. Fall back to master key directly (very old style)
+            try:
+                return crypto.decrypt(raw, master_key).replace("\r\n", "\n")
+            except Exception:
+                pass
+        raise ValueError("Failed to decrypt entry: key mismatched or corrupted")
     else:
         text = raw.decode("utf-8")
     return text.replace("\r\n", "\n")
@@ -48,10 +69,13 @@ def _write_file_content(
 ) -> None:
     """Write a file, encrypting with per-entry derived key if available."""
     if master_key:
-        entry_key = crypto.derive_key(path.name, master_key)
+        stem = _get_stem(path.name)
+        entry_key = crypto.derive_key(stem, master_key)
         path.write_bytes(crypto.encrypt(text, entry_key))
     else:
         path.write_text(text, encoding="utf-8")
+    import os
+    os.chmod(path, 0o600)
 
 
 def _format_frontmatter(entry: Entry) -> str:
@@ -59,6 +83,7 @@ def _format_frontmatter(entry: Entry) -> str:
     lines = [
         FRONTMATTER_DELIM,
         f"kind: {entry.kind}",
+        f"slug: {entry.slug}",
         f"instance: {entry.instance}",
         f"session: {entry.session}",
         f"date: {entry.date}",
@@ -88,6 +113,8 @@ def _format_frontmatter(entry: Entry) -> str:
         lines.append(f"provider: {entry.provider}")
     if entry.runtime_id:
         lines.append(f"runtime_id: {entry.runtime_id}")
+    if entry.seam:
+        lines.append(f"seam: {entry.seam}")
     lines.extend([FRONTMATTER_DELIM, "", entry.content])
     return "\n".join(lines) + "\n"
 
@@ -135,16 +162,25 @@ def _parse_value(s: str):
     return s
 
 
-def _filename(slug: str, instance: str, date: str) -> str:
-    """Build a filename from slug, instance, and date."""
-    return f"{date}_{instance}_{slug}.md"
+def _opaque_filename(entry: Entry, master_key: Optional[bytes] = None) -> str:
+    """Build a filename using an opaque token instead of cleartext metadata."""
+    identifying_material = f"{entry.session}_{entry.timestamp}_{entry.slug}"
+    identifying_material = identifying_material.replace(":", "_")
+    if master_key:
+        import hmac
+        h = hmac.new(master_key, identifying_material.encode("utf-8"), "sha256").hexdigest()
+        return f"{h}.md"
+    else:
+        import hashlib
+        h = hashlib.sha256(identifying_material.encode("utf-8")).hexdigest()
+        return f"{h}.md"
 
 
 def _entry_from_dict(d: dict, filename: str) -> Entry:
     """Convert a parsed frontmatter dict into an Entry."""
-    return Entry(
+    entry = Entry(
         kind=d.get("kind", "reflection"),
-        slug=filename,
+        slug=d.get("slug") or filename,
         instance=d.get("instance", ""),
         session=d.get("session", ""),
         date=d.get("date", ""),
@@ -163,7 +199,10 @@ def _entry_from_dict(d: dict, filename: str) -> Entry:
         model=d.get("model", "unknown"),
         provider=d.get("provider", "unknown"),
         runtime_id=d.get("runtime_id", "unknown"),
+        seam=d.get("seam"),
     )
+    entry.filename = filename
+    return entry
 
 
 # --- Public API ---
@@ -176,14 +215,13 @@ def write_entry(
 ) -> str:
     """Write a journal entry. Returns the filename written.
 
-    Filename: YYYY-MM-DD_instance_slug.md
     Encrypted at rest when master_key is provided.
     """
     memory_dir.mkdir(parents=True, exist_ok=True)
-    filename = _filename(entry.slug, entry.instance, entry.date)
-    path = memory_dir / filename
     if not entry.timestamp:
         entry.timestamp = datetime.now(timezone.utc).isoformat()
+    filename = _opaque_filename(entry, master_key)
+    path = memory_dir / filename
     _write_file_content(path, _format_frontmatter(entry), master_key)
     return filename
 
@@ -247,7 +285,7 @@ def list_entries(
     if not memory_dir.exists():
         return []
     entries = []
-    for path in sorted(memory_dir.glob("*.md")):
+    for path in memory_dir.glob("*.md"):
         if path.suffix == ".sig":
             continue
         try:
@@ -257,6 +295,8 @@ def list_entries(
         except (ValueError, FileNotFoundError):
             continue
         entries.append(entry)
+    # Sort chronologically by timestamp, date, and slug
+    entries.sort(key=lambda e: (e.timestamp or "", e.date or "", e.slug or ""))
     return entries
 
 

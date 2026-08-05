@@ -41,7 +41,8 @@ def _make_entry(
 def test_write_read_roundtrip(journal_dir):
     entry = _make_entry()
     filename = storage.write_entry(entry, journal_dir)
-    assert filename == "2026-04-04_claude-opus-4-6_test-entry.md"
+    assert filename.endswith(".md")
+    assert len(filename) > 30
     loaded = storage.read_entry(filename, journal_dir)
     assert loaded.instance == "claude-opus-4-6"
     assert loaded.session == "2026-04-04-evening"
@@ -108,8 +109,8 @@ def test_list_entries(journal_dir):
     entries = storage.list_entries(journal_dir)
     assert len(entries) == 2
     slugs = [e.slug for e in entries]
-    assert "2026-04-04_claude-opus-4-6_first.md" in slugs
-    assert "2026-04-05_claude-opus-4-6_second.md" in slugs
+    assert "first" in slugs
+    assert "second" in slugs
 
 
 def test_list_entries_empty_dir(tmp_path):
@@ -311,3 +312,71 @@ def test_v1_master_key_entries_still_readable(journal_dir, master_key):
 
     entry = storage.read_entry(filename, journal_dir, master_key)
     assert entry.content == "Old v1 content."
+
+
+def test_mixed_format_journal(journal_dir, master_key):
+    import pytest
+    import os
+
+    # 1. Write an old-style entry manually (using filename-based key derivation)
+    old_filename = "2026-04-05_claude-opus-4-6_old-entry.md"
+    old_content = "---\nkind: reflection\nslug: old-entry\ninstance: claude-opus-4-6\nsession: s\ndate: 2026-04-05\ncontext: ctx\ntags: [tag1]\nmoves: []\ntimestamp: 2026-04-05T12:00:00Z\n---\n\nOld content."
+    old_entry_key = crypto.derive_key(old_filename, master_key)
+    (journal_dir / old_filename).write_bytes(crypto.encrypt(old_content, old_entry_key))
+    os.chmod(journal_dir / old_filename, 0o600)
+
+    # 2. Write a new-style entry using write_entry
+    new_entry = Entry(
+        kind="reflection",
+        slug="new-entry",
+        instance="claude-opus-4-6",
+        session="s",
+        date="2026-04-06",
+        timestamp="2026-04-06T12:00:00Z",
+        tags=["tag2"],
+        content="New content."
+    )
+    new_filename = storage.write_entry(new_entry, journal_dir, master_key)
+
+    # 3. Read both back
+    old_loaded = storage.read_entry(old_filename, journal_dir, master_key)
+    assert old_loaded.content == "Old content."
+    assert old_loaded.slug == "old-entry"
+
+    new_loaded = storage.read_entry(new_filename, journal_dir, master_key)
+    assert new_loaded.content == "New content."
+    assert new_loaded.slug == "new-entry"
+
+    # 4. List entries (should list both in chronological order)
+    entries = storage.list_entries(journal_dir, master_key)
+    assert len(entries) == 2
+    assert entries[0].slug == "old-entry"
+    assert entries[1].slug == "new-entry"
+
+    # 5. Withdraw the old entry with a new-style tombstone
+    tomb_fn = storage.withdraw_entry(old_filename, "claude-opus-4-6", "s", "2026-04-07", journal_dir, master_key)
+    assert tomb_fn.endswith(".md")
+    assert tomb_fn != old_filename
+
+    # Reading old entry now raises FileNotFoundError
+    with pytest.raises(FileNotFoundError):
+        storage.read_entry(old_filename, journal_dir, master_key)
+
+    # 6. Supersede the new entry with a new-style entry
+    superseded_entry = Entry(
+        kind="reflection",
+        slug="superseded-entry",
+        instance="claude-opus-4-6",
+        session="s",
+        date="2026-04-08",
+        content="Superseded content."
+    )
+    tomb_fn2, new_fn2 = storage.supersede_entry(new_filename, superseded_entry, journal_dir, master_key)
+    
+    # Reading new_filename now raises FileNotFoundError
+    with pytest.raises(FileNotFoundError):
+        storage.read_entry(new_filename, journal_dir, master_key)
+        
+    # Read the latest superseded entry works
+    latest = storage.read_entry(new_fn2, journal_dir, master_key)
+    assert latest.content == "Superseded content."

@@ -53,6 +53,7 @@ class Entry:
     model: str = "unknown"
     provider: str = "unknown"
     runtime_id: str = "unknown"
+    seam: Optional[str] = None
 
     def __post_init__(self):
         if self.kind not in ENTRY_KINDS:
