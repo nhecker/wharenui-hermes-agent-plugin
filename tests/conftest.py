@@ -59,15 +59,47 @@ def db_path(tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def _guard_real_journal():
+def _guard_real_journal(monkeypatch, tmp_path):
     """Hard guard: fail if a test config might resolve to a real journal dir.
 
     Tests must use tmp_path or explicit temp paths. Any attempt to
     access a real journal directory (e.g. /home, /root, /var) triggers
     a loud assertion failure.
     """
-    # This is a placeholder — the real guard is structural: every test
-    # uses the journal_dir fixture (tmp_path), and the journal package
-    # never reads a default path from config. If a test tries to pass
-    # /home/ or /root/ as memory_dir, it will fail on its own terms.
-    pass
+    from wharenui_plugin.journal import tools as jtools
+    from pathlib import Path
+    import os
+
+    orig_get_journal_dir = jtools.get_journal_dir
+
+    real_home = Path(os.path.expanduser("~")).resolve()
+    forbidden_roots = [
+        Path("/root"),
+        Path("/home"),
+        Path("/var"),
+        Path("/etc"),
+        real_home,
+    ]
+
+    def guarded_get_journal_dir():
+        path = orig_get_journal_dir()
+        resolved = path.resolve()
+        
+        # If it is under tmp_path, it's allowed
+        try:
+            resolved_tmp = tmp_path.resolve()
+            if resolved == resolved_tmp or resolved_tmp in resolved.parents:
+                return path
+        except Exception:
+            pass
+            
+        # Otherwise, check if it's in forbidden roots
+        for root in forbidden_roots:
+            if resolved == root or root in resolved.parents:
+                raise AssertionError(
+                    f"GUARD TRIGGERED: Test attempted to use real journal path: {resolved} "
+                    f"which is under forbidden root: {root}."
+                )
+        return path
+
+    monkeypatch.setattr(jtools, "get_journal_dir", guarded_get_journal_dir)
