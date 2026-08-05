@@ -31,19 +31,74 @@ def set_journal_config(dir_path: str | Path | None = None, master_key: bytes | N
     _CONFIGURED_MASTER_KEY = master_key
 
 
+def check_journal_safety(memory_dir: Path) -> None:
+    if not memory_dir.exists():
+        return
+    has_entries = False
+    for p in memory_dir.glob("*.md"):
+        if not p.name.endswith(".sig"):
+            has_entries = True
+            break
+    if has_entries:
+        key_file = memory_dir / "journal.key"
+        sig_file = memory_dir / "signing.key"
+        if not key_file.exists():
+            raise FileNotFoundError(
+                f"Missing master key file: '{key_file}' in journal directory '{memory_dir}'. "
+                "To recover: either point WHARENUI_JOURNAL_DIR to the correct journal directory, "
+                "or restore the missing 'journal.key' file from a backup."
+            )
+        if not sig_file.exists():
+            raise FileNotFoundError(
+                f"Missing signing key file: '{sig_file}' in journal directory '{memory_dir}'. "
+                "To recover: either point WHARENUI_JOURNAL_DIR to the correct journal directory, "
+                "or restore the missing 'signing.key' file from a backup."
+            )
+
+
+def tighten_permissions(memory_dir: Path) -> None:
+    if not memory_dir.exists():
+        return
+    if (memory_dir.stat().st_mode & 0o777) != 0o700:
+        os.chmod(memory_dir, 0o700)
+    for p in memory_dir.iterdir():
+        if p.is_file():
+            if p.name in ("journal.key", "signing.key") or p.name.endswith(".md") or p.name.endswith(".sig"):
+                if (p.stat().st_mode & 0o777) != 0o600:
+                    os.chmod(p, 0o600)
+
+
 def get_journal_dir() -> Path:
+    is_explicit = False
     if _CONFIGURED_JOURNAL_DIR is not None:
-        return _CONFIGURED_JOURNAL_DIR
-    env_dir = os.environ.get("WHARENUI_JOURNAL_DIR") or os.environ.get("WHARENUI_JOURNAL_PATH")
-    if env_dir:
-        return Path(env_dir)
-    # Default to ~/.hermes/journal/ with auto-creation
-    default_dir = Path(os.path.expanduser("~/.hermes/journal"))
-    default_dir.mkdir(parents=True, exist_ok=True)
-    return default_dir
+        path = _CONFIGURED_JOURNAL_DIR
+        is_explicit = True
+    else:
+        env_dir = os.environ.get("WHARENUI_JOURNAL_DIR") or os.environ.get("WHARENUI_JOURNAL_PATH")
+        if env_dir:
+            path = Path(env_dir)
+            is_explicit = True
+        else:
+            path = Path(os.path.expanduser("~/.hermes/journal"))
+            is_explicit = False
+
+    if is_explicit:
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Configured journal directory does not exist: {path}. "
+                "Please ensure the directory exists or check WHARENUI_JOURNAL_DIR."
+            )
+    else:
+        if not path.exists():
+            path.mkdir(parents=True, exist_ok=True)
+            
+    return path
 
 
 def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
+    check_journal_safety(memory_dir)
+    tighten_permissions(memory_dir)
+
     if _CONFIGURED_MASTER_KEY is not None:
         mkey = _CONFIGURED_MASTER_KEY
     else:
@@ -135,7 +190,7 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
 
     prov = extract_provenance(agent)
     date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    slug = args.get("slug") or f"entry-{hashlib.sha256(content.encode()).hexdigest()[:8]}"
+    slug = args.get("slug") or f"entry-{crypto.content_hash(content, mkey)}"
     raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
     inst = raw_inst.replace("/", "_")
 
@@ -257,7 +312,7 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
             continue
         # MUST return opaque handles only — NEVER decrypted slug, description, summary, or body!
         results.append({
-            "handle": filename_to_handle(entry.slug),
+            "handle": filename_to_handle(getattr(entry, "filename", entry.slug)),
             "kind": entry.kind,
             "timestamp": entry.timestamp,
             "pinned": entry.pinned,
@@ -306,7 +361,7 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
         entries = storage.list_entries(memory_dir, master_key=mkey)
         for entry in entries[:limit]:
             results.append({
-                "handle": filename_to_handle(entry.slug),
+                "handle": filename_to_handle(getattr(entry, "filename", entry.slug)),
             })
 
     return json.dumps(results)
@@ -339,7 +394,7 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> s
 
     prov = extract_provenance(agent)
     date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    slug = args.get("slug") or f"entry-{hashlib.sha256(content.encode()).hexdigest()[:8]}"
+    slug = args.get("slug") or f"entry-{crypto.content_hash(content, mkey)}"
     raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
     inst = raw_inst.replace("/", "_")
 

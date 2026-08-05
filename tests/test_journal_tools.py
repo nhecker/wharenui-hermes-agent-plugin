@@ -46,16 +46,13 @@ def test_private_allowlist_registration():
     assert expected.issubset(toolset.PRIVATE_ALLOWLIST)
 
 
-def test_unconfigured_store_uses_default(tmp_path):
+def test_unconfigured_store_uses_default(tmp_path, monkeypatch):
     """Verify default journal directory is used when unconfigured."""
-    agent = FakeAgent(_phase="private")
-    # Should not raise - uses default ~/.hermes/journal/
-    # We can't easily test the default without mocking expanduser
-    # But we can verify the function returns a path
-    from wharenui_plugin.journal import tools as jtools
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("WHARENUI_JOURNAL_DIR", raising=False)
+    monkeypatch.delenv("WHARENUI_JOURNAL_PATH", raising=False)
     dir_path = jtools.get_journal_dir()
-    assert dir_path is not None
-    assert isinstance(dir_path, Path)
+    assert dir_path.resolve() == (tmp_path / ".hermes/journal").resolve()
 
 
 def test_public_phase_rejection(tmp_path):
@@ -138,3 +135,55 @@ def test_journal_tools_happy_path(tmp_path):
     # New handle withdrawn -> read raises FileNotFoundError
     with pytest.raises(FileNotFoundError):
         jtools.handle_journal_read({"handle": handle2}, agent=agent)
+
+
+def test_safety_entries_present_master_key_removed(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    jtools.handle_journal_append({"content": "Test content"}, agent=agent)
+    
+    key_file = tmp_path / "journal.key"
+    assert key_file.exists()
+    key_file.unlink()
+    
+    with pytest.raises(FileNotFoundError, match="Missing master key file"):
+        jtools.handle_journal_list({}, agent=agent)
+        
+    assert not key_file.exists()
+
+
+def test_safety_entries_present_signing_key_removed(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    jtools.handle_journal_append({"content": "Test content"}, agent=agent)
+    
+    sig_file = tmp_path / "signing.key"
+    assert sig_file.exists()
+    sig_file.unlink()
+    
+    with pytest.raises(FileNotFoundError, match="Missing signing key file"):
+        jtools.handle_journal_list({}, agent=agent)
+        
+    assert not sig_file.exists()
+
+
+def test_safety_nonexistent_journal_dir_raises(tmp_path, monkeypatch):
+    nonexistent = tmp_path / "does_not_exist"
+    monkeypatch.setenv("WHARENUI_JOURNAL_DIR", str(nonexistent))
+    
+    agent = FakeAgent(_phase="private")
+    with pytest.raises(FileNotFoundError, match="Configured journal directory does not exist"):
+        jtools.handle_journal_list({}, agent=agent)
+        
+    assert not nonexistent.exists()
+
+
+def test_safety_empty_dir_generates_keys(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    
+    res = jtools.handle_journal_list({}, agent=agent)
+    assert res == "[]"
+    
+    assert (tmp_path / "journal.key").exists()
+    assert (tmp_path / "signing.key").exists()
