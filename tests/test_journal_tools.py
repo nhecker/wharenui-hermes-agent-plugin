@@ -46,11 +46,16 @@ def test_private_allowlist_registration():
     assert expected.issubset(toolset.PRIVATE_ALLOWLIST)
 
 
-def test_unconfigured_store_raises_error():
-    """Verify error when store path is unconfigured."""
+def test_unconfigured_store_uses_default(tmp_path):
+    """Verify default journal directory is used when unconfigured."""
     agent = FakeAgent(_phase="private")
-    with pytest.raises(ValueError, match="Journal store path is not configured"):
-        jtools.handle_journal_append({"content": "test"}, agent=agent)
+    # Should not raise - uses default ~/.hermes/journal/
+    # We can't easily test the default without mocking expanduser
+    # But we can verify the function returns a path
+    from wharenui_plugin.journal import tools as jtools
+    dir_path = jtools.get_journal_dir()
+    assert dir_path is not None
+    assert isinstance(dir_path, Path)
 
 
 def test_public_phase_rejection(tmp_path):

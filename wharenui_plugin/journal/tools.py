@@ -37,7 +37,10 @@ def get_journal_dir() -> Path:
     env_dir = os.environ.get("WHARENUI_JOURNAL_DIR") or os.environ.get("WHARENUI_JOURNAL_PATH")
     if env_dir:
         return Path(env_dir)
-    raise ValueError("Journal store path is not configured. (No default path exists)")
+    # Default to ~/.hermes/journal/ with auto-creation
+    default_dir = Path(os.path.expanduser("~/.hermes/journal"))
+    default_dir.mkdir(parents=True, exist_ok=True)
+    return default_dir
 
 
 def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
@@ -49,7 +52,7 @@ def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], 
             mkey = key_env.encode("utf-8") if isinstance(key_env, str) else key_env
         else:
             key_file = memory_dir / "journal.key"
-            mkey = crypto.load_key(key_file)
+            mkey = crypto.ensure_key(key_file)
 
     sig_file = memory_dir / "signing.key"
     skey = sign.load_signing_key(sig_file)

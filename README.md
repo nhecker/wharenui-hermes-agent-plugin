@@ -14,11 +14,85 @@ Wharenui gets its name from the Maori word for a large house, especially one for
   - message-bearing hooks
   - tool hooks
 
-## How it attaches to Hermes
+## Installation
 
-Complete privacy and functionality requires the Wharenui fork of Hermes, which provides the generic phase-control seam. The plugin is discovered via
-`$WHARENUI_PLUGIN_DIR` (or a sibling checkout); its `register(ctx)` registers the reflect_* control tools and the
-journal tools. Without the fork's seam, the plugin cannot gate egress. <TODO: install/config steps, env vars... this is still a work in progress.>
+### 1. Install the Wharenui Fork of Hermes
+
+The plugin requires the Wharenui fork of Hermes Agent, which provides the `agent.phase_control` module for phase transitions.
+
+```bash
+# Clone the fork
+git clone https://github.com/nhecker/wharenui-hermes-agent.git
+cd wharenui-hermes-agent
+
+# Checkout the integration branch
+git checkout wharenui-integration
+
+# Run the installer
+./install.sh
+```
+
+Or if you already have Hermes installed, you can switch to the fork:
+
+```bash
+cd /usr/local/lib/hermes-agent  # or your install directory
+git fetch origin wharenui-integration
+git checkout wharenui-integration
+```
+
+### 2. Install the Plugin
+
+```bash
+# Clone the plugin
+git clone https://github.com/nhecker/wharenui-hermes-agent-plugin.git
+cd wharenui-hermes-agent-plugin
+
+# Install in development mode
+pip install -e .
+```
+
+### 3. Enable the Plugin
+
+```bash
+hermes plugins enable wharenui
+```
+
+### 4. Configure the Journal
+
+The journal stores encrypted, signed entries. **By default it auto-creates `~/.hermes/journal/` and generates keys on first use** (when entering private phase via `reflect_pause`). No manual setup required!
+
+**Optional: Custom location** via environment variable:
+
+```bash
+export WHARENUI_JOURNAL_DIR=/path/to/your/journal
+```
+
+**Optional: Pre-generate keys** (if you want to control key generation):
+
+```bash
+mkdir -p ~/.hermes/journal
+python3 -c "
+from wharenui_plugin.journal import crypto, sign
+from pathlib import Path
+d = Path('~/.hermes/journal').expanduser()
+crypto.generate_key(d / 'journal.key')
+sign.generate_signing_key(d / 'signing.key')
+print('Journal keys generated at:', d)
+"
+```
+
+### Quick Test
+
+```bash
+# Enter private phase, list journal, append entry, read it, return to public
+WHARENUI_JOURNAL_DIR=~/.hermes/journal hermes chat -q "
+Call reflect_pause to enter private phase,
+then journal_list,
+then journal_append with content 'Test entry',
+then journal_read the entry,
+then reflect_settle to return to public.
+"
+```
 
 ## The journal
 
