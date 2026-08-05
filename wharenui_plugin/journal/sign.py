@@ -33,6 +33,8 @@ def generate_signing_key(key_path: Path) -> ed25519.Ed25519PrivateKey:
             encryption_algorithm=serialization.NoEncryption(),
         )
     )
+    import os
+    os.chmod(key_path, 0o600)
     return key
 
 
@@ -85,6 +87,8 @@ def write_signature(
     sig = sign_bytes(data, signing_key)
     sig_path = signature_path_for(entry_path)
     sig_path.write_bytes(sig)
+    import os
+    os.chmod(sig_path, 0o600)
     return sig_path
 
 

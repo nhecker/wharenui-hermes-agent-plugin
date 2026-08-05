@@ -29,6 +29,8 @@ def generate_key(key_path: Path) -> bytes:
     key = Fernet.generate_key()
     key_path.parent.mkdir(parents=True, exist_ok=True)
     key_path.write_bytes(key)
+    import os
+    os.chmod(key_path, 0o600)
     return key
 
 
