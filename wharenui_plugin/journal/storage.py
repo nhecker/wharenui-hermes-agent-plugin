@@ -225,14 +225,23 @@ def write_entry(
         try:
             from .tools import _resolve_seam_value
             entry.seam = _resolve_seam_value()
-        except Exception:
+        except (ImportError, AttributeError):
             try:
                 import wharenui_plugin
                 entry.seam = wharenui_plugin.get_seam_state()
-            except Exception:
-                entry.seam = "ok"
+            except (ImportError, AttributeError):
+                entry.seam = "unknown"
     filename = _opaque_filename(entry, master_key)
-    assert filename.count(".") == 1, f"Generated filename '{filename}' contains unexpected '.' characters"
+    # Invariant: a generated filename must be <dot-free-token>.md with nothing in between.
+    # This survives python -O (ValueError, not AssertionError).
+    # Relabelled on-disk shapes like <token>.tomb.md are valid to READ (see _get_stem) but are
+    # never GENERATED here — only the <token>.md form is generated.
+    _token = filename.split(".")[0]
+    if filename != f"{_token}.md":
+        raise ValueError(
+            f"Generated filename '{filename}' contains intermediate dots; "
+            f"generated names must be <dot-free-token>.md"
+        )
     path = memory_dir / filename
     _write_file_content(path, _format_frontmatter(entry), master_key)
     return filename
@@ -413,7 +422,7 @@ def edit_entry(
             model=entry.model,
             provider=entry.provider,
             runtime_id=entry.runtime_id,
-            seam=entry.seam,
+            seam=entry.seam if entry.seam is not None else "unknown",
         )
     )
     _write_file_content(path, fm, master_key)

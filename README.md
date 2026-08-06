@@ -108,7 +108,7 @@ Module layout under `wharenui_plugin/journal/`:
 | `tools.py` | the model-facing journal tools (append/read/search/…), private-phase gated |
 
 <TODO: entry format, key management, where files live, the opaque search-surface contract>
-<TODO: vet these journal entry classifiers and include any which are missing>
+<TODO: vet these journal entry classifiers and include any which are missing; right now they don't really exist at all>
 Entries may be one marked one of:
 - regular: no special designation and elligible to be randomly selected for a later session start
 - pinned: provided at the start of every session until unpinned
@@ -121,13 +121,14 @@ And:
 And: revoked, or depreciated, or TODO: etc
 
 ## Privacy
+Journal entries are encrypted at rest using a key derived from the canonical filename stem and the master key. <TODO: list where these files live>
+Readmes <TODO: list these> are unmodified, but signed by a detached signature file.
 
 <TODO: this is the section worth the most care>
 - What "private" guarantees and what it does **not**.
 - Key handling: where master/signing keys live, what compromise means.
 - What an observer of the public surface can and cannot infer.
 - The five egress channels and how each is sealed.
-- TODO: the trust contract
 
 ## The trust contract
 <TODO: pretty words here>
@@ -135,9 +136,16 @@ And: revoked, or depreciated, or TODO: etc
 ## What the AI is given at each session start
 <TODO: see also the planned "intentional context audit" in the fork's BACKLOG>
 <TODO: all the files that contain prose injected into the model's private time>
-- one random unpinned journal entrie
-- all pinned entries
-- the private-time prompt
+At session start, the AI is provided with the following metadata, clearly identified:
+- current system date and time
+- a listing (not the contents of the last eight journal entries
+- one random elligible journal entry (i.e., not quiet, revoked, <TODO: what else excludes an entry?>, or otherwise presented during the session start
+- USER.md
+- SOUL.md
+- MEMORY.md
+- pinned journal entries; if there are more than two of these a warning is shown
+- desk journal entries; if there are more than two of these a warning is shown
+- a short prompt for orientation to the pivate and public phases
 The prose the model is given
 during private time lives primarily in **`wharenui_plugin/phase/prompt.py`**, plus the descriptions on the
 reflect_* tools (`phase/tools.py`) and the journal tools (`journal/tools.py`). Be deliberate about every token
@@ -145,7 +153,8 @@ here — it *is* the private-phase experience.
 
 ## Configuration
 
-<TODO: journal dir, keys, enabling/disabling phases, any limits/caps>
+<TODO: journal dir, keys, enabling/disabling phases, any limits/caps ... do we need a Usage section?>
+<TODO: what to back up (whole directories where possible, no need to describe every little file>
 
 ## Development & testing
 

@@ -233,3 +233,105 @@ def test_matching_keys_proceed_silently(tmp_path):
         assert mkey == key_bytes
     finally:
         os.environ.pop("WHARENUI_KEY", None)
+
+
+def test_open_notebook_registers_without_the_seam(tmp_path):
+    """Register succeeds on a fork-free sys.path in open-notebook mode.
+
+    Runs in a subprocess with PYTHONPATH containing the plugin ONLY, so
+    the test cannot go vacuous if a prior test already cached 'agent' in
+    sys.modules. First asserts the seam is genuinely unimportable, then
+    asserts the full open-notebook contract.
+    """
+    import subprocess, sys, os
+
+    plugin_root = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    journal_dir = str(tmp_path / "journal")
+
+    lines = [
+        "import sys, os",
+        "try:",
+        "    import agent.phase_control",
+        "    print('SEAM_IMPORTABLE: True'); sys.exit(1)",
+        "except ImportError:",
+        "    print('SEAM_IMPORTABLE: False')",
+        "os.environ['WHARENUI_OPEN_NOTEBOOK'] = 'true'",
+        f"os.environ['WHARENUI_JOURNAL_DIR'] = {journal_dir!r}",
+        "import wharenui_plugin",
+        "class Ctx:",
+        "    def __init__(self): self.tools = {}",
+        "    def register_tool(self, name, toolset, schema, handler): self.tools[name] = schema",
+        "ctx = Ctx()",
+        "wharenui_plugin.register(ctx)",
+        "for t in ('reflect_pause','reflect_settle','reflect_done'):",
+        "    assert t not in ctx.tools, f'reflect tool registered: {t}'",
+        "print('REFLECT_ABSENT: ok')",
+        "for t in ('journal_append','journal_read','journal_list','journal_search','journal_supersede','journal_withdraw'):",
+        "    assert t in ctx.tools, f'journal tool missing: {t}'",
+        "print('JOURNAL_TOOLS: ok')",
+        "warning = ' [WARNING: Seam is absent. Entries are written in the open.]'",
+        "for t, s in ctx.tools.items():",
+        "    c = s['description'].count(warning)",
+        "    assert c == 1, f'warning count for {t}: {c}'",
+        "print('WARNING_ONCE: ok')",
+        "assert wharenui_plugin.SEAM_STATE == 'absent', wharenui_plugin.SEAM_STATE",
+        "print('SEAM_STATE: absent')",
+        "from wharenui_plugin.journal import tools as jtools",
+        "from wharenui_plugin.journal.entries import Entry",
+        "from wharenui_plugin.journal.storage import write_entry, _read_file_content",
+        "from pathlib import Path",
+        f"jdir = Path({journal_dir!r})",
+        "jtools.set_journal_config(jdir)",
+        "mkey, _, _ = jtools.get_journal_keys(jdir)",
+        "e = Entry(kind='reflection', slug='nb-test', content='Open notebook.')",
+        "fn = write_entry(e, jdir, mkey)",
+        "raw = _read_file_content(jdir / fn, mkey)",
+        "assert 'seam: absent' in raw, f'seam field missing in {fn}'",
+        "print('ENTRY_SEAM: absent')",
+        "print('ALL_CHECKS: PASSED')",
+    ]
+    script = "\n".join(lines)
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={**os.environ, "PYTHONPATH": plugin_root},
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert "SEAM_IMPORTABLE: False" in output, f"Seam was importable — test is vacuous.\n{output}"
+    assert "ALL_CHECKS: PASSED" in output, f"Open-notebook checks failed:\n{output}"
+    assert result.returncode == 0, f"Subprocess exit {result.returncode}:\n{output}"
+
+
+def test_open_notebook_requires_explicit_opt_in():
+    """Without WHARENUI_OPEN_NOTEBOOK=true, register() raises naming the opt-in."""
+    import subprocess, sys, os
+
+    plugin_root = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    lines = [
+        "import sys, os",
+        "os.environ.pop('WHARENUI_OPEN_NOTEBOOK', None)",
+        "import wharenui_plugin",
+        "class Ctx:",
+        "    def register_tool(self, **kw): pass",
+        "try:",
+        "    wharenui_plugin.register(Ctx())",
+        "    print('NO_ERROR: register should have raised'); sys.exit(1)",
+        "except RuntimeError as e:",
+        "    if 'WHARENUI_OPEN_NOTEBOOK' in str(e):",
+        "        print('OPT_IN_REQUIRED: ok')",
+        "    else:",
+        "        print(f'WRONG_ERROR: {e}'); sys.exit(1)",
+    ]
+    script = "\n".join(lines)
+    env = {k: v for k, v in os.environ.items() if k != "WHARENUI_OPEN_NOTEBOOK"}
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        env={**env, "PYTHONPATH": plugin_root},
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + result.stderr
+    assert "OPT_IN_REQUIRED: ok" in output, f"Opt-in check failed:\n{output}"
+    assert result.returncode == 0, f"Subprocess exit {result.returncode}:\n{output}"

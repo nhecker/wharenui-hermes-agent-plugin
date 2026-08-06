@@ -135,3 +135,64 @@ def test_provenance_edit_never_rewrites_history(tmp_path):
     raw_text = storage._read_file_content(tmp_path / fn, mkey)
     assert "seam: absent" in raw_text
     assert "seam: ok" not in raw_text
+
+
+def test_provenance_seam_unknown_on_indeterminate_state(tmp_path):
+    """write_entry stamps 'unknown' when the seam state cannot be determined."""
+    import wharenui_plugin
+    import sys
+    from wharenui_plugin.journal.entries import Entry
+    from wharenui_plugin.journal import storage
+
+    # Simulate indeterminate state by temporarily hiding get_seam_state
+    orig = wharenui_plugin.get_seam_state
+    def broken_get_seam_state():
+        raise AttributeError("simulated indeterminate state")
+    wharenui_plugin.get_seam_state = broken_get_seam_state
+
+    jtools.set_journal_config(tmp_path)
+    mkey, _, _ = jtools.get_journal_keys(tmp_path)
+    try:
+        e = Entry(kind="reflection", slug="unknown-test", content="Indeterminate state.")
+        fn = storage.write_entry(e, tmp_path, mkey)
+        raw = storage._read_file_content(tmp_path / fn, mkey)
+        assert "seam: unknown" in raw, f"Expected 'seam: unknown' in frontmatter, got:\n{raw[:400]}"
+    finally:
+        wharenui_plugin.get_seam_state = orig
+
+
+def test_provenance_legacy_entry_edited_gets_unknown(tmp_path):
+    """Editing a legacy entry (seam=None, no seam field in frontmatter) stamps 'unknown'.
+
+    This prevents retroactively labelling an old entry with the current live state,
+    which would manufacture false provenance.
+    """
+    import wharenui_plugin
+    from wharenui_plugin.journal import storage
+    from wharenui_plugin.journal.entries import Entry
+
+    jtools.set_journal_config(tmp_path)
+    wharenui_plugin.SEAM_STATE = "ok"
+    mkey, _, _ = jtools.get_journal_keys(tmp_path)
+
+    # Write a fake legacy entry with no seam field in frontmatter
+    legacy_content = "---\nkind: reflection\nslug: legacy\ncontent: old\n---\n\nLegacy content.\n"
+    from wharenui_plugin.journal import crypto
+    token = "a" * 64
+    legacy_fn = f"{token}.md"
+    legacy_path = tmp_path / legacy_fn
+    entry_key = crypto.derive_key(token, mkey)
+    legacy_path.write_bytes(crypto.encrypt(legacy_content, entry_key))
+    import os; os.chmod(legacy_path, 0o600)
+
+    # Read back: seam should be None (legacy)
+    read_back = storage.read_entry(legacy_fn, tmp_path, mkey)
+    assert read_back.seam is None, f"Expected seam=None for legacy entry, got {read_back.seam!r}"
+
+    # Edit the legacy entry while seam is ok
+    wharenui_plugin.SEAM_STATE = "ok"
+    storage.edit_entry(legacy_fn, tmp_path, mkey, content="Updated legacy content.")
+
+    raw = storage._read_file_content(legacy_path, mkey)
+    assert "seam: unknown" in raw, f"Expected 'seam: unknown' after editing legacy entry, got:\n{raw[:400]}"
+    assert "seam: ok" not in raw, "Must not stamp live state on a legacy entry"

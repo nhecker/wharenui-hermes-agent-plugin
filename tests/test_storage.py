@@ -398,7 +398,73 @@ def test_canonical_stem_and_relabelled_sig(tmp_path):
     assert read_relabelled.content == "Hello relabel"
     assert sign.verify_entry(tmp_path / new_fn, sig_key.public_key()) is True
 
-def test_write_time_invariant_no_extra_dots(tmp_path):
+def test_write_time_invariant_token_is_dot_free(tmp_path):
+    """A generated filename's token (before first dot) must contain no dots.
+
+    The check raises ValueError (not AssertionError) so it survives python -O,
+    and it permits <token>.tomb.md as a valid relabelled on-disk shape.
+    """
     entry = Entry(kind="reflection", slug="test", content="content")
     fn = storage.write_entry(entry, tmp_path)
-    assert fn.count(".") == 1
+    token = fn.split(".")[0]
+    # Token must be dot-free (the invariant this new check enforces)
+    assert "." not in token, f"Token '{token}' contains a dot"
+    # Filename still has exactly one dot (token + .md)
+    assert fn.count(".") == 1, f"Expected <token>.md, got '{fn}'"
+
+
+def test_write_time_invariant_raises_valueerror_on_dotted_token(tmp_path, monkeypatch):
+    """The filename invariant raises ValueError (survives python -O), not AssertionError.
+
+    A generated filename must be exactly <token>.md with no intermediate dots.
+    We patch _opaque_filename to produce an intermediate-dot name and verify
+    ValueError is raised rather than AssertionError (which python -O strips).
+    """
+    import pytest
+    from wharenui_plugin.journal import storage as stor
+
+    def bad_opaque(entry, master_key=None):
+        return "abc.def.md"  # intermediate dot between segments -- invalid generated name
+
+    monkeypatch.setattr(stor, "_opaque_filename", bad_opaque)
+
+    entry = Entry(kind="reflection", slug="bad", content="bad")
+    with pytest.raises(ValueError, match="intermediate dots"):
+        stor.write_entry(entry, tmp_path)
+
+
+def test_relabelled_entry_decrypts_and_verifies(tmp_path):
+    """<token>.tomb.md is a valid on-disk shape: decrypts AND verifies after relabelling."""
+    from wharenui_plugin.journal import sign, crypto
+    import shutil, os
+
+    mkey = crypto.generate_key(tmp_path / "journal.key")
+    entry = Entry(kind="reflection", slug="relabel-test", content="Relabel verify.")
+    fn = storage.write_entry(entry, tmp_path, mkey)
+    entry_path = tmp_path / fn
+
+    # Sign the entry
+    _, skey, vkey = sign.load_signing_key(tmp_path / "signing.key"), None, None
+    if skey is None:
+        skey = sign.generate_signing_key(tmp_path / "signing.key")
+    vkey = skey.public_key()
+    sig_path = sign.signature_path_for(entry_path)
+    sig_path.write_bytes(skey.sign(entry_path.read_bytes()))
+    os.chmod(sig_path, 0o600)
+    assert sign.verify_entry(entry_path, vkey), "Original did not verify"
+
+    # Relabel: <token>.md -> <token>.tomb.md
+    token = fn.split(".")[0]
+    tomb_fn = f"{token}.tomb.md"
+    shutil.copy2(entry_path, tmp_path / tomb_fn)
+
+    # Sig path for relabelled file must be same as original (canonical token)
+    tomb_path = tmp_path / tomb_fn
+    assert sign.signature_path_for(tomb_path) == sig_path, "Sig paths differ after relabel"
+
+    # Decrypts
+    text = storage._read_file_content(tomb_path, mkey)
+    assert "Relabel verify." in text, "Relabelled entry did not decrypt"
+
+    # Verifies (sig is over the encrypted bytes, which are the same)
+    assert sign.verify_entry(tomb_path, vkey), "Relabelled entry did not verify"

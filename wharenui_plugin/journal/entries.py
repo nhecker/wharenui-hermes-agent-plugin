@@ -31,6 +31,7 @@ class Entry:
     supersedes: filenames this entry replaces
     withdraws: filenames this entry withdraws
     responds_to: filenames this entry responds to
+    seam: privacy floor state at write time (ok|absent|unverified|unknown|None=pre-FIX2 writer)
     """
 
     kind: str = "reflection"

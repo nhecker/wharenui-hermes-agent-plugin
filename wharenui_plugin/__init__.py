@@ -9,9 +9,12 @@ SEAM_VERSION_PAIR = ""
 
 def get_seam_state() -> str:
     """Get the current state of the security seam.
-    
+
     Returns:
-        "ok" | "absent" | "unverified"
+        "ok"         -- seam present, version matched (floor intact)
+        "absent"     -- open-notebook mode, no seam (entries written in the open)
+        "unverified" -- seam present but version mismatched, human override active
+        "unknown"    -- state could not be determined at write time
     """
     import wharenui_plugin
     state = getattr(wharenui_plugin, "SEAM_STATE", "ok")
@@ -140,8 +143,6 @@ def register(ctx):
     journal_withdraw_schema = copy.deepcopy(_JOURNAL_WITHDRAW_SCHEMA)
     """Register Wharenui with Hermes Agent."""
     import os
-    from .phase.handler import WharePhaseHandler
-    from .phase.tools import handle_reflect_settle, handle_reflect_done
     from .journal.tools import (
         handle_journal_append,
         handle_journal_read,
@@ -151,10 +152,12 @@ def register(ctx):
         handle_journal_withdraw,
     )
 
-    handler = WharePhaseHandler()
     has_seam = hasattr(ctx, "register_control_tool")
 
     if has_seam:
+        from .phase.handler import WharePhaseHandler
+        from .phase.tools import handle_reflect_settle, handle_reflect_done
+        handler = WharePhaseHandler()
         ctx.register_control_tool(
             name="reflect_pause", toolset="wharenui",
             schema=pause_schema,
