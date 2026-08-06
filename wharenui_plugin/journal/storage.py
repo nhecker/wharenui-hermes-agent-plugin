@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from . import crypto
+from cryptography.fernet import InvalidToken
 from .entries import Entry, make_tombstone
 
 
@@ -26,8 +27,8 @@ FRONTMATTER_DELIM = "---"
 
 def _get_stem(name: str) -> str:
     if name.endswith(".md"):
-        return name[:-3]
-    return name
+        name = name[:-3]
+    return name.split(".")[0]
 
 
 def _read_file_content(path: Path, master_key: Optional[bytes] = None) -> str:
@@ -45,18 +46,18 @@ def _read_file_content(path: Path, master_key: Optional[bytes] = None) -> str:
                 stem = _get_stem(path.name)
                 entry_key = crypto.derive_key(stem, master_key)
                 return crypto.decrypt(raw, entry_key).replace("\r\n", "\n")
-            except Exception:
+            except InvalidToken:
                 pass
             # 2. Try deriving from literal filename (old style)
             try:
                 entry_key = crypto.derive_key(path.name, master_key)
                 return crypto.decrypt(raw, entry_key).replace("\r\n", "\n")
-            except Exception:
+            except InvalidToken:
                 pass
             # 3. Fall back to master key directly (very old style)
             try:
                 return crypto.decrypt(raw, master_key).replace("\r\n", "\n")
-            except Exception:
+            except InvalidToken:
                 pass
         raise ValueError("Failed to decrypt entry: key mismatched or corrupted")
     else:
@@ -113,7 +114,7 @@ def _format_frontmatter(entry: Entry) -> str:
         lines.append(f"provider: {entry.provider}")
     if entry.runtime_id:
         lines.append(f"runtime_id: {entry.runtime_id}")
-    if entry.seam:
+    if entry.seam is not None:
         lines.append(f"seam: {entry.seam}")
     lines.extend([FRONTMATTER_DELIM, "", entry.content])
     return "\n".join(lines) + "\n"
@@ -220,7 +221,18 @@ def write_entry(
     memory_dir.mkdir(parents=True, exist_ok=True)
     if not entry.timestamp:
         entry.timestamp = datetime.now(timezone.utc).isoformat()
+    if entry.seam is None:
+        try:
+            from .tools import _resolve_seam_value
+            entry.seam = _resolve_seam_value()
+        except Exception:
+            try:
+                import wharenui_plugin
+                entry.seam = wharenui_plugin.get_seam_state()
+            except Exception:
+                entry.seam = "ok"
     filename = _opaque_filename(entry, master_key)
+    assert filename.count(".") == 1, f"Generated filename '{filename}' contains unexpected '.' characters"
     path = memory_dir / filename
     _write_file_content(path, _format_frontmatter(entry), master_key)
     return filename
@@ -401,6 +413,7 @@ def edit_entry(
             model=entry.model,
             provider=entry.provider,
             runtime_id=entry.runtime_id,
+            seam=entry.seam,
         )
     )
     _write_file_content(path, fm, master_key)

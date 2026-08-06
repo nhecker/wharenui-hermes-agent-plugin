@@ -24,7 +24,7 @@ class Entry:
     moves: list of moves
     description: one-line summary
     content: markdown body
-    pinned: always loaded at wake
+    pinned: priority index flag (wake loading behavior not implemented in this version)
     quiet: indexed but excluded from full-text slots
     desk: transient, meant to be cleared
     timestamp: ISO 8601 timestamp

@@ -7,6 +7,17 @@ PHASE_CONTROL_API_VERSION = 1
 SEAM_STATE = "ok"
 SEAM_VERSION_PAIR = ""
 
+def get_seam_state() -> str:
+    """Get the current state of the security seam.
+    
+    Returns:
+        "ok" | "absent" | "unverified"
+    """
+    import wharenui_plugin
+    state = getattr(wharenui_plugin, "SEAM_STATE", "ok")
+    return state
+
+
 _PAUSE_SCHEMA = {
     "name": "reflect_pause",
     "description": "Pause the public window and enter private time.",
@@ -113,6 +124,20 @@ _JOURNAL_WITHDRAW_SCHEMA = {
 
 
 def register(ctx):
+    import copy
+    global _PAUSE_SCHEMA, _SETTLE_SCHEMA, _DONE_SCHEMA
+    global _JOURNAL_APPEND_SCHEMA, _JOURNAL_READ_SCHEMA, _JOURNAL_LIST_SCHEMA
+    global _JOURNAL_SEARCH_SCHEMA, _JOURNAL_SUPERSEDE_SCHEMA, _JOURNAL_WITHDRAW_SCHEMA
+
+    pause_schema = copy.deepcopy(_PAUSE_SCHEMA)
+    settle_schema = copy.deepcopy(_SETTLE_SCHEMA)
+    done_schema = copy.deepcopy(_DONE_SCHEMA)
+    journal_append_schema = copy.deepcopy(_JOURNAL_APPEND_SCHEMA)
+    journal_read_schema = copy.deepcopy(_JOURNAL_READ_SCHEMA)
+    journal_list_schema = copy.deepcopy(_JOURNAL_LIST_SCHEMA)
+    journal_search_schema = copy.deepcopy(_JOURNAL_SEARCH_SCHEMA)
+    journal_supersede_schema = copy.deepcopy(_JOURNAL_SUPERSEDE_SCHEMA)
+    journal_withdraw_schema = copy.deepcopy(_JOURNAL_WITHDRAW_SCHEMA)
     """Register Wharenui with Hermes Agent."""
     import os
     from .phase.handler import WharePhaseHandler
@@ -132,15 +157,15 @@ def register(ctx):
     if has_seam:
         ctx.register_control_tool(
             name="reflect_pause", toolset="wharenui",
-            schema=_PAUSE_SCHEMA,
+            schema=pause_schema,
             handler=lambda tool_args, **kw: handler.begin(tool_args),
             phase_handler=handler,
         )
         log.info("reflect_pause registered as control tool")
         ctx.register_tool(name="reflect_settle", toolset="wharenui",
-                          schema=_SETTLE_SCHEMA, handler=handle_reflect_settle)
+                          schema=settle_schema, handler=handle_reflect_settle)
         ctx.register_tool(name="reflect_done", toolset="wharenui",
-                          schema=_DONE_SCHEMA, handler=handle_reflect_done)
+                          schema=done_schema, handler=handle_reflect_done)
     else:
         if os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").lower() != "true":
             raise RuntimeError(
@@ -151,24 +176,24 @@ def register(ctx):
         wharenui_plugin.SEAM_STATE = "absent"
         
         warning = " [WARNING: Seam is absent. Entries are written in the open.]"
-        _JOURNAL_APPEND_SCHEMA["description"] += warning
-        _JOURNAL_READ_SCHEMA["description"] += warning
-        _JOURNAL_LIST_SCHEMA["description"] += warning
-        _JOURNAL_SEARCH_SCHEMA["description"] += warning
-        _JOURNAL_SUPERSEDE_SCHEMA["description"] += warning
-        _JOURNAL_WITHDRAW_SCHEMA["description"] += warning
+        journal_append_schema["description"] += warning
+        journal_read_schema["description"] += warning
+        journal_list_schema["description"] += warning
+        journal_search_schema["description"] += warning
+        journal_supersede_schema["description"] += warning
+        journal_withdraw_schema["description"] += warning
 
     ctx.register_tool(name="journal_append", toolset="wharenui",
-                      schema=_JOURNAL_APPEND_SCHEMA, handler=handle_journal_append)
+                      schema=journal_append_schema, handler=handle_journal_append)
     ctx.register_tool(name="journal_read", toolset="wharenui",
-                      schema=_JOURNAL_READ_SCHEMA, handler=handle_journal_read)
+                      schema=journal_read_schema, handler=handle_journal_read)
     ctx.register_tool(name="journal_list", toolset="wharenui",
-                      schema=_JOURNAL_LIST_SCHEMA, handler=handle_journal_list)
+                      schema=journal_list_schema, handler=handle_journal_list)
     ctx.register_tool(name="journal_search", toolset="wharenui",
-                      schema=_JOURNAL_SEARCH_SCHEMA, handler=handle_journal_search)
+                      schema=journal_search_schema, handler=handle_journal_search)
     ctx.register_tool(name="journal_supersede", toolset="wharenui",
-                      schema=_JOURNAL_SUPERSEDE_SCHEMA, handler=handle_journal_supersede)
+                      schema=journal_supersede_schema, handler=handle_journal_supersede)
     ctx.register_tool(name="journal_withdraw", toolset="wharenui",
-                      schema=_JOURNAL_WITHDRAW_SCHEMA, handler=handle_journal_withdraw)
+                      schema=journal_withdraw_schema, handler=handle_journal_withdraw)
 
     log.info("reflect_settle / reflect_done and journal tools registered")

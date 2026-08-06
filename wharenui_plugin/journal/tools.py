@@ -99,14 +99,21 @@ def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], 
     check_journal_safety(memory_dir)
     tighten_permissions(memory_dir)
 
+    key_file = memory_dir / "journal.key"
+    key_env = os.environ.get("WHARENUI_KEY")
+    if key_env is not None and key_file.exists():
+        env_key_bytes = key_env.encode("utf-8") if isinstance(key_env, str) else key_env
+        with open(key_file, "rb") as kf:
+            file_key_bytes = kf.read()
+        if env_key_bytes != file_key_bytes:
+            raise ValueError(f"Conflict: WHARENUI_KEY environment variable is set and differs from journal.key file at '{key_file}'. Existing entries were written under the file-based key.")
+
     if _CONFIGURED_MASTER_KEY is not None:
         mkey = _CONFIGURED_MASTER_KEY
     else:
-        key_env = os.environ.get("WHARENUI_KEY")
         if key_env:
             mkey = key_env.encode("utf-8") if isinstance(key_env, str) else key_env
         else:
-            key_file = memory_dir / "journal.key"
             mkey = crypto.ensure_key(key_file)
 
     sig_file = memory_dir / "signing.key"
@@ -120,6 +127,26 @@ def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], 
 def filename_to_handle(filename: str) -> str:
     h = hashlib.sha256(filename.encode("utf-8")).hexdigest()[:12]
     return f"h_{h}"
+
+
+
+def _resolve_seam_value() -> str:
+    import wharenui_plugin
+    state = wharenui_plugin.get_seam_state()
+    if state == "unverified":
+        pair = getattr(wharenui_plugin, "SEAM_VERSION_PAIR", "")
+        import re
+        m = re.match(r"plugin(.*)-seam(.*)", pair)
+        if m:
+            p_val = m.group(1)
+            s_val = m.group(2)
+            if p_val == "unknown" or p_val == "":
+                p_val = "None"
+            return f"unverified (plugin={p_val} seam={s_val})"
+        if pair:
+            return f"unverified ({pair})"
+        return "unverified"
+    return state
 
 
 def resolve_handle_to_filename(handle: str, memory_dir: Path) -> str:
@@ -214,6 +241,7 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
         model=prov["model"],
         provider=prov["provider"],
         runtime_id=prov["runtime_id"],
+        seam=_resolve_seam_value(),
     )
 
     filename = storage.write_entry(entry, memory_dir, master_key=mkey)
@@ -412,6 +440,7 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> s
         model=prov["model"],
         provider=prov["provider"],
         runtime_id=prov["runtime_id"],
+        seam=_resolve_seam_value(),
     )
 
     tomb_fn, new_fn = storage.supersede_entry(old_filename, new_entry, memory_dir, master_key=mkey)

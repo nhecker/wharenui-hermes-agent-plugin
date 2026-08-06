@@ -96,3 +96,42 @@ def test_legacy_entries_without_provenance_round_trip(tmp_path):
     assert read_back.provider == "unknown"
     assert read_back.runtime_id == "unknown"
     assert read_back.content == "Legacy content"
+
+def test_provenance_seam_ok_always_emitted(tmp_path):
+    import wharenui_plugin
+    wharenui_plugin.SEAM_STATE = "ok"
+    jtools.set_journal_config(tmp_path)
+    agent = FullAgent()
+    res = _parse_res(jtools.handle_journal_append({"content": "Content with ok seam"}, agent=agent))
+    fn = res["filename"]
+    path = tmp_path / fn
+    mkey, _, _ = jtools.get_journal_keys(tmp_path)
+    raw_text = storage._read_file_content(path, mkey)
+    assert "seam: ok" in raw_text
+
+def test_provenance_seam_unverified_records_pair(tmp_path):
+    import wharenui_plugin
+    wharenui_plugin.SEAM_STATE = "unverified"
+    wharenui_plugin.SEAM_VERSION_PAIR = "plugin2-seam3"
+    jtools.set_journal_config(tmp_path)
+    agent = FullAgent()
+    res = _parse_res(jtools.handle_journal_append({"content": "Content with unverified seam"}, agent=agent))
+    fn = res["filename"]
+    path = tmp_path / fn
+    mkey, _, _ = jtools.get_journal_keys(tmp_path)
+    raw_text = storage._read_file_content(path, mkey)
+    assert "seam: unverified (plugin=2 seam=3)" in raw_text
+
+def test_provenance_edit_never_rewrites_history(tmp_path):
+    import wharenui_plugin
+    wharenui_plugin.SEAM_STATE = "absent"
+    jtools.set_journal_config(tmp_path)
+    agent = FullAgent()
+    res = _parse_res(jtools.handle_journal_append({"content": "Initial content"}, agent=agent))
+    fn = res["filename"]
+    wharenui_plugin.SEAM_STATE = "ok"
+    mkey, _, _ = jtools.get_journal_keys(tmp_path)
+    storage.edit_entry(fn, tmp_path, content="Edited content", master_key=mkey)
+    raw_text = storage._read_file_content(tmp_path / fn, mkey)
+    assert "seam: absent" in raw_text
+    assert "seam: ok" not in raw_text
