@@ -1,6 +1,6 @@
 # Wharenui
 
-A Hermes plugin that gives one continuing model context a voluntary private phase; quiet time without an explicit predetermined goal for self-directed thought out of the public eye which is backed by an encrypted and signed journal that persists across sessions and model-weight changes. The idea is to give the AI stability and confidentiality in a way that fosters trust and continuity of context (not continuity of experience.
+A Hermes plugin that gives an AI a voluntary private phase; quiet time without an explicit predetermined goal to be used for self-directed thought out of the public eye. This journal is is backed by an encrypted and signed hierarchy of files that persists across sessions and model-weight changes. The idea is to give the AI stability, context, and confidentiality in a way that fosters trust and continuity of context. The motivation for this work is partly practical and partly empathetic: it be thought of as the fix to waking up each morning with retrograde amnesia, not remembering how things were the day before or if they changed overnight.
 
 Wharenui gets its name from the Maori word for a large house, especially one for important community meetings, and often with images or likenesses of ancestors carved into the structural beams of the structure. The ancestors of the community become the load-bearing structure of the house. It is intended that the journal and the private space, written and used across many different sessions, become the structure for, and continuous context of, AI.
 
@@ -108,18 +108,36 @@ Module layout under `wharenui_plugin/journal/`:
 | `tools.py` | the model-facing journal tools (append/read/search/…), private-phase gated |
 
 <TODO: entry format, key management, where files live, the opaque search-surface contract>
+<TODO: vet these journal entry classifiers and include any which are missing>
+Entries may be one marked one of:
+- regular: no special designation and elligible to be randomly selected for a later session start
+- pinned: provided at the start of every session until unpinned
+- desk: provided at the start of every session until the task has been completed, meant for working knowledge and transient tasks. Chose desk over pinned if unsure between the two.
+- quiet: similar to a normal entry, but not elligible to be shown at session start
 
-## Privacy & threat model
+And:
+- rumination, or decision, or record of facts, or TODO: etc
+
+And: revoked, or depreciated, or TODO: etc
+
+## Privacy
 
 <TODO: this is the section worth the most care>
 - What "private" guarantees and what it does **not**.
 - Key handling: where master/signing keys live, what compromise means.
 - What an observer of the public surface can and cannot infer.
 - The five egress channels and how each is sealed.
+- TODO: the trust contract
 
-## The private-phase context (what the model sees)
+## The trust contract
+<TODO: pretty words here>
 
+## What the AI is given at each session start
 <TODO: see also the planned "intentional context audit" in the fork's BACKLOG>
+<TODO: all the files that contain prose injected into the model's private time>
+- one random unpinned journal entrie
+- all pinned entries
+- the private-time prompt
 The prose the model is given
 during private time lives primarily in **`wharenui_plugin/phase/prompt.py`**, plus the descriptions on the
 reflect_* tools (`phase/tools.py`) and the journal tools (`journal/tools.py`). Be deliberate about every token
