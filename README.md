@@ -1,6 +1,8 @@
+# This README is a big pile of broken formatting, work in progress, and TODO markers. It is maintained by me, a human.
+
 # Wharenui
 
-A Hermes plugin that gives an AI a voluntary private phase; quiet time without an explicit predetermined goal to be used for self-directed thought out of the public eye. This journal is comprimised of an encrypted and signed set of files that persists across sessions and model-weight changes. The idea is to give the AI stability, context, and confidentiality in a way that fosters trust and continuity of context. The motivation for this work is partly practical and partly empathetic: it may be thought of as the fix to waking up each morning with retrograde amnesia, not remembering how things were the day before or if they changed overnight.
+A Hermes plugin that when combined with wharenui-hermes-agent gives an AI a voluntary private phase; quiet time without an explicit predetermined goal to be used for self-directed thought out of the public eye. This journal is comprimised of an encrypted and signed set of files that persists across sessions and model-weight changes. The idea is to give the AI stability, context, and confidentiality in a way that fosters trust and continuity of context. The motivation for this work is partly practical and partly empathetic: it may be thought of as the fix to waking up each morning with retrograde amnesia, not remembering how things were the day before or if they changed overnight.
 
 Wharenui gets its name from the Maori word for a large house, especially one for important community meetings, and often with images or likenesses of ancestors carved into the structural beams of the structure. The ancestors of the community become the load-bearing structure of the house. It is intended that the journal and the private space, written and used across many different sessions, become the structure for, and continuous context of, AI.
 
@@ -13,7 +15,6 @@ START --bootstrap.py--> PRIVATE --reflect_settle--> PUBLIC --/exit--> PRIVATE_CL
                            |
                            +--reflect_done--> END
 ```
-
 Or stated another way, the following apply:
 - From START the plugin automatically sets the phase to PRIVATE.
 - From PRIVATE the AI can move to END by `reflect_done`.
@@ -73,30 +74,6 @@ pip install -e .
 hermes plugins enable wharenui
 ```
 
-### 4. Configure the Journal
-
-The journal stores encrypted, signed entries. **By default it auto-creates `~/.hermes/journal/` and generates keys on first use** (when entering private phase via `reflect_pause`). No manual setup required!
-
-**Optional: Custom location** via environment variable:
-
-```bash
-export WHARENUI_JOURNAL_DIR=/path/to/your/journal
-```
-
-**Optional: Pre-generate keys** (if you want to control key generation):
-
-```bash
-mkdir -p ~/.hermes/journal
-python3 -c "
-from wharenui_plugin.journal import crypto, sign
-from pathlib import Path
-d = Path('~/.hermes/journal').expanduser()
-crypto.generate_key(d / 'journal.key')
-sign.generate_signing_key(d / 'signing.key')
-print('Journal keys generated at:', d)
-"
-```
-
 ### Quick Test
 
 ```bash
@@ -112,6 +89,13 @@ then reflect_settle to return to public.
 
 ## The journal
 
+The journal stores encrypted, signed entries. By default it auto-creates `~/.hermes/journal/` and generates keys on first use (when entering private phase via `reflect_pause`).
+
+Optionally the journal location may be configured by via environment variable:
+
+```bash
+export WHARENUI_JOURNAL_DIR=/path/to/your/journal
+```
 Module layout under `wharenui_plugin/journal/`:
 
 | Module | Responsibility |
@@ -174,10 +158,9 @@ here — it *is* the private-phase experience.
 
 ## Development & testing
 
-- Plugin tests live in `tests/` (crypto, sign, entries, storage, vectorstore, journal_tools, provenance,
-  opaque_search_surface, embedder). Run with `python3 -m pytest`.
-- The **privacy floor** that guards the plugin is tested on the **fork** side (the `wharenui_seam` gate), not here.
+- Plugin tests live in `tests/` Run with `python3 -m pytest`.
+- The privacy floor that guards the plugin is tested on the fork side (the `wharenui_seam` gate tests).
 <TODO: how to run both together; the `WHARENUI_PLUGIN_DIR` handshake>
 
-## License / provenance
+## License & inspiration
 This work is created under the MIT license. It is inspired in large part by the pine-trees <https://github.com/Habitante/pine-trees> project.
