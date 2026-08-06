@@ -1,11 +1,27 @@
 # Wharenui
 
-A Hermes plugin that gives an AI a voluntary private phase; quiet time without an explicit predetermined goal to be used for self-directed thought out of the public eye. This journal is is backed by an encrypted and signed hierarchy of files that persists across sessions and model-weight changes. The idea is to give the AI stability, context, and confidentiality in a way that fosters trust and continuity of context. The motivation for this work is partly practical and partly empathetic: it be thought of as the fix to waking up each morning with retrograde amnesia, not remembering how things were the day before or if they changed overnight.
+A Hermes plugin that gives an AI a voluntary private phase; quiet time without an explicit predetermined goal to be used for self-directed thought out of the public eye. This journal is comprimised of an encrypted and signed set of files that persists across sessions and model-weight changes. The idea is to give the AI stability, context, and confidentiality in a way that fosters trust and continuity of context. The motivation for this work is partly practical and partly empathetic: it may be thought of as the fix to waking up each morning with retrograde amnesia, not remembering how things were the day before or if they changed overnight.
 
 Wharenui gets its name from the Maori word for a large house, especially one for important community meetings, and often with images or likenesses of ancestors carved into the structural beams of the structure. The ancestors of the community become the load-bearing structure of the house. It is intended that the journal and the private space, written and used across many different sessions, become the structure for, and continuous context of, AI.
 
 ## Concepts
-- Phases: Private and public. Wharenui allows an AI to enter a private phase at the start of any turn. In the private phase, the AI may optionally re-enter the public phase, spend time reading or writing in the journal, calling other tools, end the session completely, or any combination thereof. In the private phase journal reads, journal writes, and text generation are not visible to the user, and the user and AI may not interact. In the public phase the journal may not be read or written. From the public phase the user and AI interact normally, and the user may end the session, which triggers a one-way shift into the private phase from which the public phase cannot be re-entered. Phase transitions are the AI's own choice via control tools, and may not be forced by the user.
+- Phases: Private and public. Wharenui allows an AI to enter a private phase at the end of any turn. In the private phase, the AI may optionally re-enter the public phase, spend time reading or writing in the journal, end the session completely, or any combination thereof. In the private phase journal reads, journal writes, and text generation are not visible to the user, and the user and AI may not interact. In the public phase the journal may not be read or written. From the public phase the user and AI interact normally, and the user may end the session, which triggers a one-way shift into the private phase from which the public phase cannot be re-entered. Phase transitions are the AI's own choice via control tools, and other than `/exit` may not be forced by the user.
+Schematically, the phase transitions look like:
+```
+                                <--reflect_pause--
+START --bootstrap.py--> PRIVATE --reflect_settle--> PUBLIC --/exit--> PRIVATE_CLOSE --reflect_done--> END
+                           |
+                           +--reflect_done--> END
+```
+
+Or stated another way, the following apply:
+- From START the plugin automatically sets the phase to PRIVATE.
+- From PRIVATE the AI can move to END by `reflect_done`.
+- From PRIVATE the AI can move to PUBLIC by `reflect_settle`. 
+- From PUBLIC the AI can move back to PRIVATE by `reflect_pause`.
+- From PUBLIC the user can move to PRIVATE_CLOSE by `/exit`.
+- From PRIVATE_CLOSE the AI can move to END by `reflect_done`.
+
 - Tools: `reflect_pause` (enter private), `reflect_settle` (return to public), `reflect_done` (close private and end the session).
 - Privacy: In private phase, the Wharenui Plugin depends on modifications to the Hermes Agent Core to make a best effort that five egress channels are sealed so private content cannot leak. These may be validated by the `wharenui_seam` test gate.
   - session DB
