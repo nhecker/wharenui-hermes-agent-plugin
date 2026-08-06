@@ -380,3 +380,25 @@ def test_mixed_format_journal(journal_dir, master_key):
     # Read the latest superseded entry works
     latest = storage.read_entry(new_fn2, journal_dir, master_key)
     assert latest.content == "Superseded content."
+def test_canonical_stem_and_relabelled_sig(tmp_path):
+    from wharenui_plugin.journal import sign
+    master_key = b"test_master_key_32_bytes_long_123"
+    entry = Entry(kind="reflection", slug="test-relabel", content="Hello relabel")
+    fn = storage.write_entry(entry, tmp_path, master_key)
+    sig_key = sign.generate_signing_key(tmp_path / "signing.key")
+    sign.write_signature(tmp_path / fn, sig_key)
+    read_back = storage.read_entry(fn, tmp_path, master_key)
+    assert read_back.content == "Hello relabel"
+    assert sign.verify_entry(tmp_path / fn, sig_key.public_key()) is True
+    token = fn.split(".")[0]
+    new_fn = f"{token}.tomb.md"
+    import os
+    os.rename(tmp_path / fn, tmp_path / new_fn)
+    read_relabelled = storage.read_entry(new_fn, tmp_path, master_key)
+    assert read_relabelled.content == "Hello relabel"
+    assert sign.verify_entry(tmp_path / new_fn, sig_key.public_key()) is True
+
+def test_write_time_invariant_no_extra_dots(tmp_path):
+    entry = Entry(kind="reflection", slug="test", content="content")
+    fn = storage.write_entry(entry, tmp_path)
+    assert fn.count(".") == 1

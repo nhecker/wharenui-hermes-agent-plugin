@@ -76,7 +76,9 @@ def verify_signature(
 
 def signature_path_for(entry_path: Path) -> Path:
     """Return the .sig file path for a given entry file."""
-    return entry_path.with_suffix(".md.sig")
+    name = entry_path.name
+    token = name.split(".")[0]
+    return entry_path.parent / f"{token}.md.sig"
 
 
 def write_signature(
