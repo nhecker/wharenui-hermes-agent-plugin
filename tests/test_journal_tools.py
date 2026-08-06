@@ -187,3 +187,49 @@ def test_safety_empty_dir_generates_keys(tmp_path):
     
     assert (tmp_path / "journal.key").exists()
     assert (tmp_path / "signing.key").exists()
+
+def test_register_does_not_mutate_module_schemas():
+    import wharenui_plugin
+    import os
+    import copy
+    orig_append = copy.deepcopy(wharenui_plugin._JOURNAL_APPEND_SCHEMA)
+    class MockCtx:
+        def __init__(self):
+            self.registered = {}
+        def register_tool(self, name, toolset, schema, handler):
+            self.registered[name] = schema
+    ctx = MockCtx()
+    os.environ["WHARENUI_OPEN_NOTEBOOK"] = "true"
+    wharenui_plugin.register(ctx)
+    wharenui_plugin.register(ctx)
+    registered_desc = ctx.registered["journal_append"]["description"]
+    warning = " [WARNING: Seam is absent. Entries are written in the open.]"
+    assert registered_desc.count(warning) == 1
+    assert wharenui_plugin._JOURNAL_APPEND_SCHEMA == orig_append
+
+def test_conflicting_keys_raise_value_error(tmp_path):
+    import os
+    key_file = tmp_path / "journal.key"
+    key_file.write_bytes(b"key_file_content_123456789012")
+    os.environ["WHARENUI_KEY"] = "key_env_content_different_99"
+    try:
+        from wharenui_plugin.journal import tools as jtools_local
+        import pytest
+        with pytest.raises(ValueError) as exc:
+            jtools_local.get_journal_keys(tmp_path)
+        assert "Conflict: WHARENUI_KEY" in str(exc.value)
+    finally:
+        os.environ.pop("WHARENUI_KEY", None)
+
+def test_matching_keys_proceed_silently(tmp_path):
+    import os
+    key_bytes = b"key_file_content_123456789012"
+    key_file = tmp_path / "journal.key"
+    key_file.write_bytes(key_bytes)
+    os.environ["WHARENUI_KEY"] = key_bytes.decode("utf-8")
+    try:
+        from wharenui_plugin.journal import tools as jtools_local
+        mkey, _, _ = jtools_local.get_journal_keys(tmp_path)
+        assert mkey == key_bytes
+    finally:
+        os.environ.pop("WHARENUI_KEY", None)
