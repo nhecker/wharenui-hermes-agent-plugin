@@ -94,4 +94,4 @@ jobs:
         env:
           STOCK_HERMES_DIR: ${{ github.workspace }}/stock-hermes
         run: |
-          python3 -m pytest tests/test_matrix.py::test_m3_open_notebook_against_real_stock_hermes -v
+          python3 -m pytest tests/test_open_notebook.py::test_open_notebook_against_real_stock_hermes -v

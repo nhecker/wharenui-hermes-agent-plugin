@@ -8,7 +8,7 @@ from pathlib import Path
 
 # --- M3 ---
 
-def test_m3_open_notebook_against_real_stock_hermes(tmp_path):
+def test_open_notebook_against_real_stock_hermes(tmp_path):
     """M3: plugin registers in open-notebook mode against a real stock Hermes tree.
 
     Uses the stock tree at /root/work/hermes-agent (upstream c2e45b555) which has
@@ -85,7 +85,7 @@ def test_m3_open_notebook_against_real_stock_hermes(tmp_path):
 
 # --- M6 ---
 
-def test_m6_accepts_yes_as_truthy(tmp_path):
+def test_open_notebook_accepts_yes_as_truthy(tmp_path):
     """M6: WHARENUI_OPEN_NOTEBOOK=yes is accepted."""
     plugin_root = str(Path(__file__).resolve().parent.parent)
     journal_dir = str(tmp_path / "journal")
@@ -109,7 +109,7 @@ def test_m6_accepts_yes_as_truthy(tmp_path):
     assert "YES_ACCEPTED: ok" in result.stdout, f"yes not accepted:\n{result.stdout}{result.stderr}"
 
 
-def test_m6_rejects_bogus_value():
+def test_open_notebook_rejects_bogus_value():
     """M6: WHARENUI_OPEN_NOTEBOOK=maybe raises with a helpful message."""
     plugin_root = str(Path(__file__).resolve().parent.parent)
     lines = [
