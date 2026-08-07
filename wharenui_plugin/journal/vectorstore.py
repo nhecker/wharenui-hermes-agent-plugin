@@ -122,10 +122,13 @@ def search(
         conn.close()
     if not rows:
         return []
+    norm_query = math.sqrt(sum(x * x for x in query_embedding))
+
     scored = []
     for filename_protected, blob in rows:
         stored = _unpack(blob)
-        sim = _cosine_similarity(query_embedding, stored)
+        sim = _cosine_similarity(query_embedding, stored, norm_query)
+
         scored.append(
             {
                 "filename": _recover_filename(filename_protected, master_key),
@@ -150,9 +153,10 @@ def _recover_filename(data: bytes, master_key: Optional[bytes] = None) -> str:
     return data.decode("utf-8")
 
 
-def _cosine_similarity(a: list[float], b: list[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float], norm_a: Optional[float] = None) -> float:
     dot = sum(x * y for x, y in zip(a, b))
-    norm_a = math.sqrt(sum(x * x for x in a))
+    if norm_a is None:
+        norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
     if norm_a == 0.0 or norm_b == 0.0:
         return 0.0

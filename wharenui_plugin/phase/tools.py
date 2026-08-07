@@ -2,12 +2,16 @@
 from agent.phase_control import ControlOutcome
 from typing import Any
 
-def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
-    """Return to window. Rejected if closing_private (T3.5)."""
+def _resolve_agent(args: Any, agent: Any, kwargs_dict: dict) -> Any:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
-        agent = kwargs.get("agent")
+        agent = kwargs_dict.get("agent")
+    return agent
+
+def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
+    """Return to window. Rejected if closing_private (T3.5)."""
+    agent = _resolve_agent(args, agent, kwargs)
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "closing_private":
         return "Cannot return during close-out. Use reflect_done."
@@ -20,10 +24,7 @@ def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
 
 def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
     """End session. Rejected if public."""
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    agent = _resolve_agent(args, agent, kwargs)
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
         return "Cannot exit from public phase. Use reflect_pause first."
