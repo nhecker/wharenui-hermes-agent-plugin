@@ -72,11 +72,11 @@ jobs:
       - name: Checkout plugin
         uses: actions/checkout@v4.2.2
 
-      - name: Checkout stock Hermes (pinned c2e45b555)
+      - name: Checkout stock Hermes (pinned full SHA)
         uses: actions/checkout@v4.2.2
         with:
           repository: nousresearch/hermes-agent
-          ref: c2e45b555
+          ref: c2e45b555f8a4e78e8dacbeb965bbf3fcf5d709a
           path: ./stock-hermes
 
       - name: Set up Python 3.13
