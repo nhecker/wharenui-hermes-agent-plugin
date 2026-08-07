@@ -276,21 +276,53 @@ def _rename_to_tomb(filename: str, memory_dir: Path) -> str:
     token = filename.split(".")[0]
     new_filename = f"{token}{TOMB_SUFFIX}.md"
     new_path = memory_dir / new_filename
+    if new_path.exists():
+        raise FileExistsError(
+            f"Refusing to clobber existing tombstone: {new_path} "
+            f"(source: {old_path})"
+        )
     old_path.rename(new_path)
     return new_filename
 
 
+def _compute_legacy_tombstoned(
+    memory_dir: Path, master_key: Optional[bytes] = None
+) -> set[str]:
+    """Single-pass scan: return filenames targeted by legacy frontmatter tombstones.
+
+    Computed once per listing and threaded into _is_tombstoned so the per-entry
+    scan is eliminated.  Only references found in supersedes/withdraws frontmatter
+    are returned — suffix-renamed entries are handled by the fast path.
+    """
+    legacy: set[str] = set()
+    for p in memory_dir.glob("*.md"):
+        if p.suffix == ".sig":
+            continue
+        try:
+            text = _read_file_content(p, master_key)
+        except Exception:
+            continue
+        if "supersedes:" in text or "withdraws:" in text:
+            parsed = _parse_frontmatter(text)
+            for t in parsed.get("supersedes", []):
+                legacy.add(t)
+            for t in parsed.get("withdraws", []):
+                legacy.add(t)
+    return legacy
+
+
 def _is_tombstoned(
-    filename: str, memory_dir: Path, master_key: Optional[bytes] = None
+    filename: str,
+    memory_dir: Path,
+    master_key: Optional[bytes] = None,
+    legacy_tombstoned: Optional[set[str]] = None,
 ) -> bool:
     """Check if an entry has been tombstoned/superseded.
 
-    Fast path: if the file has been renamed to <token>.tomb.md (post-TIDY
-    convention), it is tombstoned by definition.
-    Slow path (legacy): scan all entries' frontmatter for supersedes/withdraws
-    references — needed for entries tombstoned before the suffix convention.
+    Fast path: <token>.tomb.md suffix or a .tomb.md sibling exists.
+    Slow path: if legacy_tombstoned is provided, check membership; otherwise
+    fall back to a full decrypt-every-entry scan (standalone read_entry only).
     """
-    # Fast path: filename-based check
     if _has_tomb_suffix(filename):
         return True
     token = filename.split(".")[0]
@@ -298,7 +330,9 @@ def _is_tombstoned(
     if (memory_dir / tomb_name).exists():
         return True
 
-    # Slow path: legacy frontmatter scan (entries tombstoned before the suffix convention)
+    if legacy_tombstoned is not None:
+        return filename in legacy_tombstoned
+
     for p in memory_dir.glob("*.md"):
         if p.name == filename or p.suffix == ".sig":
             continue
@@ -320,6 +354,7 @@ def read_entry(
     memory_dir: Path,
     master_key: Optional[bytes] = None,
     include_tombstoned: bool = False,
+    legacy_tombstoned: Optional[set[str]] = None,
 ) -> Entry:
     """Read an entry from disk. Returns an Entry.
 
@@ -337,7 +372,7 @@ def read_entry(
             raise FileNotFoundError(f"Entry {filename} has been tombstoned")
         if _has_tomb_suffix(filename):
             raise FileNotFoundError(f"Entry {filename} has been withdrawn (filename suffix)")
-        if _is_tombstoned(filename, memory_dir, master_key):
+        if _is_tombstoned(filename, memory_dir, master_key, legacy_tombstoned):
             raise FileNotFoundError(f"Entry {filename} has been tombstoned/superseded")
     return entry
 
@@ -355,18 +390,55 @@ def list_entries(
     memory_dir = Path(memory_dir)
     if not memory_dir.exists():
         return []
-    entries = []
+    if include_tombstoned:
+        # Simple path: read everything, no tombstone filtering
+        entries = []
+        for path in memory_dir.glob("*.md"):
+            if path.suffix == ".sig":
+                continue
+            try:
+                entry = read_entry(
+                    path.name, memory_dir, master_key, include_tombstoned
+                )
+            except (ValueError, FileNotFoundError):
+                continue
+            entries.append(entry)
+        entries.sort(key=lambda e: (e.timestamp or "", e.date or "", e.slug or ""))
+        return entries
+
+    # Filtering path: one pass to read + build legacy set, second pass to filter.
+    # Each file is decrypted exactly once.
+    raw_entries: list[tuple[Entry, str]] = []
+    legacy_tombstoned: set[str] = set()
     for path in memory_dir.glob("*.md"):
         if path.suffix == ".sig":
             continue
         try:
-            entry = read_entry(
-                path.name, memory_dir, master_key, include_tombstoned
-            )
+            text = _read_file_content(path, master_key)
         except (ValueError, FileNotFoundError):
             continue
+        try:
+            parsed = _parse_frontmatter(text)
+        except ValueError:
+            continue
+        entry = _entry_from_dict(parsed, path.name)
+        # Collect legacy tombstone targets from frontmatter
+        if "supersedes:" in text or "withdraws:" in text:
+            for t in parsed.get("supersedes", []):
+                legacy_tombstoned.add(t)
+            for t in parsed.get("withdraws", []):
+                legacy_tombstoned.add(t)
+        raw_entries.append((entry, path.name))
+
+    entries = []
+    for entry, fn in raw_entries:
+        if entry.kind == "tombstone":
+            continue
+        if _has_tomb_suffix(fn):
+            continue
+        if fn in legacy_tombstoned:
+            continue
         entries.append(entry)
-    # Sort chronologically by timestamp, date, and slug
     entries.sort(key=lambda e: (e.timestamp or "", e.date or "", e.slug or ""))
     return entries
 
@@ -488,3 +560,31 @@ def edit_entry(
     )
     _write_file_content(path, fm, master_key)
     return filename
+
+
+def migrate_legacy_tombstones(
+    memory_dir: Path,
+    master_key: Optional[bytes] = None,
+) -> list[str]:
+    """Rename frontmatter-only tombstoned entries to <token>.tomb.md.
+
+    Idempotent: running twice is a no-op (already-suffixed entries are skipped
+    by _rename_to_tomb).  After migration the legacy scan finds nothing and
+    the suffix fast path is total.
+
+    Returns the list of filenames that were renamed.
+
+    .. caution::
+        Do NOT run against the real journal at ~/.hermes/journal/ without
+        explicit operator approval.  Synthetic fixtures only from this WP.
+    """
+    legacy = _compute_legacy_tombstoned(memory_dir, master_key)
+    renamed: list[str] = []
+    for fn in legacy:
+        old_path = memory_dir / fn
+        if not old_path.exists():
+            continue
+        new_fn = _rename_to_tomb(fn, memory_dir)
+        if new_fn != fn:
+            renamed.append(new_fn)
+    return renamed
