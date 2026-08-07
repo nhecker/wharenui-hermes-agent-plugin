@@ -4,7 +4,7 @@ import logging
 log = logging.getLogger("wharenui_plugin")
 
 PHASE_CONTROL_API_VERSION = 1
-SEAM_STATE = "ok"
+SEAM_STATE = "unknown"
 SEAM_VERSION_PAIR = ""
 
 def get_seam_state() -> str:
@@ -17,7 +17,7 @@ def get_seam_state() -> str:
         "unknown"    -- state could not be determined at write time
     """
     import wharenui_plugin
-    state = getattr(wharenui_plugin, "SEAM_STATE", "ok")
+    state = getattr(wharenui_plugin, "SEAM_STATE", "unknown")
     return state
 
 
@@ -155,6 +155,8 @@ def register(ctx):
     has_seam = hasattr(ctx, "register_control_tool")
 
     if has_seam:
+        if os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").strip().lower() in ("true", "1", "yes", "on"):
+            log.info("WHARENUI_OPEN_NOTEBOOK is set but seam is present — ignored, using seam")
         from .phase.handler import WharePhaseHandler
         from .phase.tools import handle_reflect_settle, handle_reflect_done
         handler = WharePhaseHandler()
@@ -170,10 +172,12 @@ def register(ctx):
         ctx.register_tool(name="reflect_done", toolset="wharenui",
                           schema=done_schema, handler=handle_reflect_done)
     else:
-        if os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").lower() != "true":
+        _opt_in = os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").strip().lower()
+        if _opt_in not in ("true", "1", "yes", "on"):
             raise RuntimeError(
                 "Wharenui plugin detected stock Hermes with no phase-control seam. "
-                "To run in 'open notebook' mode (journaling publicly), set WHARENUI_OPEN_NOTEBOOK=true."
+                "To run in 'open notebook' mode (journaling publicly), "
+                "set WHARENUI_OPEN_NOTEBOOK=true (accepted: true, 1, yes, on)."
             )
         import wharenui_plugin
         wharenui_plugin.SEAM_STATE = "absent"
