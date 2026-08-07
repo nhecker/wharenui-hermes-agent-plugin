@@ -1,0 +1,67 @@
+name: Tests
+
+on:
+  push:
+    branches: ["*"]
+  pull_request:
+    branches: ["*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: "Plugin unit tests"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4.2.2
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -e .[test]
+
+      - name: Run plugin unit tests
+        run: |
+          python3 -m pytest tests/ -q
+
+  integration:
+    name: "Seam gate (with fork)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4.2.2
+
+      - name: Checkout fork (sibling)
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: nhecker/wharenui-hermes-agent
+          ref: wharenui-integration
+          path: ../wharenui-hermes-agent
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -e ../wharenui-hermes-agent[test,dev,web,acp]
+          pip install anthropic==0.87.0 mcp==1.26.0 agent-client-protocol==0.9.0 python-multipart==0.0.27
+
+      - name: Run seam gate
+        env:
+          WHARENUI_PLUGIN_DIR: ${{ github.workspace }}
+        working-directory: ../wharenui-hermes-agent
+        run: |
+          python3 .github/scripts/run_tests.py --selector tests/run_agent -m "wharenui_seam" --min-collected 62 --mode serial
