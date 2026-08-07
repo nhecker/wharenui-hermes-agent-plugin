@@ -15,7 +15,7 @@ def test_m3_open_notebook_against_real_stock_hermes(tmp_path):
     agent/__init__.py but NO agent/phase_control.py. This is the deployment we
     actually ship into — not the PYTHONPATH-only test that FIX3 covers.
     """
-    stock_root = Path("/root/work/hermes-agent")
+    stock_root = Path(os.environ.get("STOCK_HERMES_DIR", "/root/work/hermes-agent"))
     plugin_root = str(Path(__file__).resolve().parent.parent)
     journal_dir = str(tmp_path / "journal")
     stock_root_str = str(stock_root)

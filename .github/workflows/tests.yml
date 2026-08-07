@@ -65,3 +65,33 @@ jobs:
         working-directory: ./wharenui-hermes-agent
         run: |
           python3 .github/scripts/run_tests.py --selector tests/run_agent -m "wharenui_seam" --min-collected 62 --mode serial
+  stock-hermes:
+    name: "Stock Hermes open-notebook (pinned c2e45b555)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin
+        uses: actions/checkout@v4.2.2
+
+      - name: Checkout stock Hermes (pinned c2e45b555)
+        uses: actions/checkout@v4.2.2
+        with:
+          repository: nousresearch/hermes-agent
+          ref: c2e45b555
+          path: ./stock-hermes
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5.4.0
+        with:
+          python-version: "3.13"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run stock-hermes test
+        env:
+          STOCK_HERMES_DIR: ${{ github.workspace }}/stock-hermes
+        run: |
+          python3 -m pytest tests/test_matrix.py::test_m3_open_notebook_against_real_stock_hermes -v
