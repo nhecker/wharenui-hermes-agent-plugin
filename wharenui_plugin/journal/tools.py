@@ -171,19 +171,19 @@ def extract_provenance(agent: Any = None) -> dict:
         "session": "unknown",
     }
     if agent is not None:
-        if getattr(agent, "model", None):
-            prov["model"] = str(agent.model)
-        if getattr(agent, "provider", None):
-            prov["provider"] = str(agent.provider)
-        elif getattr(agent, "provider_name", None):
-            prov["provider"] = str(agent.provider_name)
-        if getattr(agent, "runtime_id", None):
-            prov["runtime_id"] = str(agent.runtime_id)
-        if getattr(agent, "session_id", None):
-            prov["session"] = str(agent.session_id)
+        if model := getattr(agent, "model", None):
+            prov["model"] = str(model)
+        if provider := getattr(agent, "provider", None):
+            prov["provider"] = str(provider)
+        elif provider_name := getattr(agent, "provider_name", None):
+            prov["provider"] = str(provider_name)
+        if runtime_id := getattr(agent, "runtime_id", None):
+            prov["runtime_id"] = str(runtime_id)
+        if session_id := getattr(agent, "session_id", None):
+            prov["session"] = str(session_id)
 
-    if os.environ.get("HERMES_RUNTIME_ID") and prov["runtime_id"] == "unknown":
-        prov["runtime_id"] = os.environ.get("HERMES_RUNTIME_ID")
+    if (runtime_id_env := os.environ.get("HERMES_RUNTIME_ID")) and prov["runtime_id"] == "unknown":
+        prov["runtime_id"] = runtime_id_env
     return prov
 
 
@@ -193,20 +193,49 @@ def _assert_private_phase(agent: Any = None):
         raise PermissionError("Journal tools are private-only and cannot be executed in public phase.")
 
 
-def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
+
+def _resolve_args_and_agent(args: Any, agent: Any, kwargs_dict: dict, fallback_key: str = "") -> tuple[dict, Any]:
     if args is not None and hasattr(args, "_phase"):
         agent, args = args, agent
     if agent is None:
-        agent = kwargs.get("agent")
+        agent = kwargs_dict.get("agent")
+        
     _assert_private_phase(agent)
-
+    
     if isinstance(args, str):
         try:
             args = json.loads(args)
         except Exception:
-            args = {"content": args}
+            args = {fallback_key: args} if fallback_key else {}
     elif not isinstance(args, dict):
         args = {}
+    return args, agent
+
+def _get_provenance_info(agent: Any, args: dict, content: Optional[str], mkey: Optional[bytes] = None) -> dict:
+    prov = extract_provenance(agent)
+    date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
+    inst = raw_inst.replace("/", "_")
+    
+    session = args.get("session") or prov["session"]
+    slug = args.get("slug")
+    if not slug and content:
+        from . import crypto
+        slug = f"entry-{crypto.content_hash(content, mkey)}"
+        
+    return {
+        "model": prov["model"],
+        "provider": prov["provider"],
+        "runtime_id": prov["runtime_id"],
+        "session": session,
+        "instance": inst,
+        "date": date_str,
+        "slug": slug,
+    }
+
+def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "content")
+    _assert_private_phase(agent)
 
     content = args.get("content", "")
     if not content:
@@ -214,19 +243,14 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
 
     memory_dir = get_journal_dir()
     mkey, skey, vkey = get_journal_keys(memory_dir)
-
-    prov = extract_provenance(agent)
-    date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    slug = args.get("slug") or f"entry-{crypto.content_hash(content, mkey)}"
-    raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
-    inst = raw_inst.replace("/", "_")
+    pinfo = _get_provenance_info(agent, args, content, mkey)
 
     entry = Entry(
         kind=args.get("kind", "reflection"),
-        slug=slug,
-        instance=inst,
-        session=args.get("session") or prov["session"],
-        date=date_str,
+        slug=pinfo["slug"],
+        instance=pinfo["instance"],
+        session=pinfo["session"],
+        date=pinfo["date"],
         context=args.get("context", ""),
         tags=args.get("tags") or [],
         moves=args.get("moves") or [],
@@ -238,9 +262,9 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
         supersedes=args.get("supersedes") or [],
         withdraws=args.get("withdraws") or [],
         responds_to=args.get("responds_to") or [],
-        model=prov["model"],
-        provider=prov["provider"],
-        runtime_id=prov["runtime_id"],
+        model=pinfo["model"],
+        provider=pinfo["provider"],
+        runtime_id=pinfo["runtime_id"],
         seam=_resolve_seam_value(),
     )
 
@@ -262,19 +286,8 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
 
 
 def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> str:
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "handle")
     _assert_private_phase(agent)
-
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception:
-            args = {"handle": args}
-    elif not isinstance(args, dict):
-        args = {}
 
     handle = args.get("handle") or args.get("filename")
     if not handle:
@@ -314,19 +327,8 @@ def handle_journal_read(args: Any = None, agent: Any = None, **kwargs) -> str:
 
 
 def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "tag")
     _assert_private_phase(agent)
-
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception:
-            args = {"tag": args}
-    elif not isinstance(args, dict):
-        args = {}
 
     tag_filter = args.get("tag")
 
@@ -349,19 +351,8 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
 
 
 def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "query")
     _assert_private_phase(agent)
-
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception:
-            args = {"query": args}
-    elif not isinstance(args, dict):
-        args = {}
 
     query = args.get("query", "")
     limit = int(args.get("limit", 5))
@@ -396,19 +387,8 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
 
 
 def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> str:
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    args, agent = _resolve_args_and_agent(args, agent, kwargs)
     _assert_private_phase(agent)
-
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception:
-            args = {}
-    elif not isinstance(args, dict):
-        args = {}
 
     old_handle = args.get("old_handle") or args.get("old_filename")
     content = args.get("content", "")
@@ -419,27 +399,22 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> s
     mkey, skey, vkey = get_journal_keys(memory_dir)
 
     old_filename = resolve_handle_to_filename(old_handle, memory_dir)
-
-    prov = extract_provenance(agent)
-    date_str = args.get("date") or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    slug = args.get("slug") or f"entry-{crypto.content_hash(content, mkey)}"
-    raw_inst = args.get("instance") or (f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown")
-    inst = raw_inst.replace("/", "_")
+    pinfo = _get_provenance_info(agent, args, content, mkey)
 
     new_entry = Entry(
         kind=args.get("kind", "reflection"),
-        slug=slug,
-        instance=inst,
-        session=args.get("session") or prov["session"],
-        date=date_str,
+        slug=pinfo["slug"],
+        instance=pinfo["instance"],
+        session=pinfo["session"],
+        date=pinfo["date"],
         context=args.get("context", ""),
         tags=args.get("tags") or [],
         moves=args.get("moves") or [],
         description=args.get("description", ""),
         content=content,
-        model=prov["model"],
-        provider=prov["provider"],
-        runtime_id=prov["runtime_id"],
+        model=pinfo["model"],
+        provider=pinfo["provider"],
+        runtime_id=pinfo["runtime_id"],
         seam=_resolve_seam_value(),
     )
 
@@ -466,19 +441,8 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> s
 
 
 def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> str:
-    if args is not None and hasattr(args, "_phase"):
-        agent, args = args, agent
-    if agent is None:
-        agent = kwargs.get("agent")
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "handle")
     _assert_private_phase(agent)
-
-    if isinstance(args, str):
-        try:
-            args = json.loads(args)
-        except Exception:
-            args = {"handle": args}
-    elif not isinstance(args, dict):
-        args = {}
 
     handle = args.get("handle") or args.get("filename")
     if not handle:
@@ -489,17 +453,13 @@ def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> st
     mkey, skey, vkey = get_journal_keys(memory_dir)
 
     filename = resolve_handle_to_filename(handle, memory_dir)
-
-    prov = extract_provenance(agent)
-    date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    raw_inst = f"{prov['provider']}_{prov['model']}" if prov['model'] != "unknown" else "unknown"
-    inst = raw_inst.replace("/", "_")
+    pinfo = _get_provenance_info(agent, args, None)
 
     tomb_fn = storage.withdraw_entry(
         filename=filename,
-        instance=inst,
-        session=prov["session"],
-        date=date_str,
+        instance=pinfo["instance"],
+        session=pinfo["session"],
+        date=pinfo["date"],
         memory_dir=memory_dir,
         master_key=mkey,
         reason=reason,

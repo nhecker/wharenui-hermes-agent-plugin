@@ -15,7 +15,23 @@ def test_open_notebook_against_real_stock_hermes(tmp_path):
     agent/__init__.py but NO agent/phase_control.py. This is the deployment we
     actually ship into — not the PYTHONPATH-only test that FIX3 covers.
     """
-    stock_root = Path(os.environ.get("STOCK_HERMES_DIR", "/root/work/hermes-agent"))
+    stock_env = os.environ.get("STOCK_HERMES_DIR")
+    if os.environ.get("REQUIRE_STOCK_HERMES") == "1":
+        assert stock_env is not None, "STOCK_HERMES_DIR must be set when REQUIRE_STOCK_HERMES is 1"
+        
+    stock_root = Path(stock_env or "/root/work/hermes-agent")
+    
+    try:
+        exists = (stock_root / "agent" / "__init__.py").exists()
+    except PermissionError:
+        exists = False
+        
+    if not exists:
+        if os.environ.get("REQUIRE_STOCK_HERMES") == "1":
+            pytest.fail(f"Stock Hermes tree missing at {stock_root}")
+        else:
+            pytest.skip("Stock Hermes tree not found; skipping test.")
+
     plugin_root = str(Path(__file__).resolve().parent.parent)
     journal_dir = str(tmp_path / "journal")
     stock_root_str = str(stock_root)

@@ -32,8 +32,6 @@ TOMB_SUFFIX = ".tomb"
 
 
 def _get_stem(name: str) -> str:
-    if name.endswith(".md"):
-        name = name[:-3]
     return name.split(".")[0]
 
 

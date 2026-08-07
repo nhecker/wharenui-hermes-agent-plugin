@@ -416,6 +416,7 @@ def test_write_time_invariant_raises_valueerror_on_dotted_token(tmp_path, monkey
     """
     import pytest
     from wharenui_plugin.journal import storage as stor
+    from wharenui_plugin.journal.entries import Entry
 
     def bad_opaque(entry, master_key=None):
         return "abc.def.md"  # intermediate dot between segments -- invalid generated name
