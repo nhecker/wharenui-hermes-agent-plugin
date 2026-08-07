@@ -36,10 +36,15 @@ class MinimalAgent:
 
 @pytest.fixture(autouse=True)
 def clean_env():
+    import wharenui_plugin as wp
     old = os.environ.pop("HERMES_RUNTIME_ID", None)
+    old_seam_state = wp.SEAM_STATE
+    old_seam_pair = wp.SEAM_VERSION_PAIR
     yield
     if old is not None:
         os.environ["HERMES_RUNTIME_ID"] = old
+    wp.SEAM_STATE = old_seam_state
+    wp.SEAM_VERSION_PAIR = old_seam_pair
 
 
 def test_provenance_stamped_when_available(tmp_path):

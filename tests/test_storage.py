@@ -135,35 +135,24 @@ def test_withdraw_entry_appends_tombstone(journal_dir):
         filename, "claude-opus-4-6", "s", "2026-04-05", journal_dir
     )
 
-    # Original file still exists
-    assert (journal_dir / filename).exists()
+    # Original file has been renamed to <token>.tomb.md
+    token = filename.split(".")[0]
+    tomb_name = f"{token}.tomb.md"
+    assert not (journal_dir / filename).exists(), "original should be renamed"
+    assert (journal_dir / tomb_name).exists(), "renamed entry should exist"
 
-    # Tombstone file exists
+    # Tombstone record exists
     assert (journal_dir / tomb_fn).exists()
 
-    # Read original raises (tombstoned)
+    # Read original (by old name) raises — file no longer exists at that path
     try:
         storage.read_entry(filename, journal_dir)
         assert False, "should have raised"
     except FileNotFoundError:
         pass
 
-    # Can read with include_tombstoned=True
-    # (the original entry is not a tombstone, so it's hidden by the tombstone check)
-    # Actually, read_entry raises on tombstoned entries — let me check
-    # The tombstone is a separate entry that supersedes the original
-    # read_entry checks if the entry ITSELF is a tombstone kind
-    # The original entry is still reflection kind, so it should be readable
-    # UNLESS we implement tombstone suppression at read_entry level
-    # Right now the implementation only skips entries whose kind == "tombstone"
-    # The original entry is still reflection kind, so it's still readable
-    # We need a different approach: read_entry checks if a tombstone exists for it
-    # Actually, looking at my implementation, read_entry only checks entry.kind == "tombstone"
-    # So the original entry is still readable after withdraw. That's not right.
-    # The withdraw_entry writes a tombstone, but nothing prevents reading the original.
-    # Let me fix this after the test — for now, verify the tombstone was written.
-    # Original should still be readable (we haven't implemented cross-reference filtering)
-    original = storage.read_entry(filename, journal_dir, include_tombstoned=True)
+    # Read renamed entry with include_tombstoned=True — still decryptable
+    original = storage.read_entry(tomb_name, journal_dir, include_tombstoned=True)
     assert original.content == "Body."
 
 
@@ -211,8 +200,11 @@ def test_supersede_entry(journal_dir):
     )
     tomb_fn, new_fn = storage.supersede_entry(old_fn, new, journal_dir)
 
-    # Both original files exist
-    assert (journal_dir / old_fn).exists()
+    # Old entry has been renamed to <token>.tomb.md
+    token = old_fn.split(".")[0]
+    tomb_name = f"{token}.tomb.md"
+    assert not (journal_dir / old_fn).exists(), "old entry should be renamed"
+    assert (journal_dir / tomb_name).exists(), "renamed old entry should exist"
     assert (journal_dir / new_fn).exists()
     assert (journal_dir / tomb_fn).exists()
 
@@ -381,6 +373,7 @@ def test_mixed_format_journal(journal_dir, master_key):
     latest = storage.read_entry(new_fn2, journal_dir, master_key)
     assert latest.content == "Superseded content."
 def test_canonical_stem_and_relabelled_sig(tmp_path):
+    """Relabelled <token>.tomb.md entry still decrypts and verifies."""
     from wharenui_plugin.journal import sign
     master_key = b"test_master_key_32_bytes_long_123"
     entry = Entry(kind="reflection", slug="test-relabel", content="Hello relabel")
@@ -394,7 +387,8 @@ def test_canonical_stem_and_relabelled_sig(tmp_path):
     new_fn = f"{token}.tomb.md"
     import os
     os.rename(tmp_path / fn, tmp_path / new_fn)
-    read_relabelled = storage.read_entry(new_fn, tmp_path, master_key)
+    # .tomb.md suffix means "withdrawn" — must use include_tombstoned=True to read
+    read_relabelled = storage.read_entry(new_fn, tmp_path, master_key, include_tombstoned=True)
     assert read_relabelled.content == "Hello relabel"
     assert sign.verify_entry(tmp_path / new_fn, sig_key.public_key()) is True
 
@@ -468,3 +462,118 @@ def test_relabelled_entry_decrypts_and_verifies(tmp_path):
 
     # Verifies (sig is over the encrypted bytes, which are the same)
     assert sign.verify_entry(tomb_path, vkey), "Relabelled entry did not verify"
+
+
+def test_tombstone_suffix_withdraw_excludes_from_list_and_search(journal_dir):
+    """An entry withdrawn after T1 is excluded from read/list by filename suffix."""
+    e1 = _make_entry(slug="keep", content="Visible.", date="2026-06-01")
+    e2 = _make_entry(slug="drop", content="Hidden.", date="2026-06-02")
+    fn1 = storage.write_entry(e1, journal_dir)
+    fn2 = storage.write_entry(e2, journal_dir)
+
+    storage.withdraw_entry(fn2, "inst", "s", "2026-06-03", journal_dir)
+
+    entries = storage.list_entries(journal_dir)
+    names = [e.slug for e in entries]
+    assert "keep" in names
+    assert "drop" not in names
+
+
+def test_legacy_frontmatter_tombstone_still_excluded(journal_dir):
+    """A pre-T1 frontmatter-only tombstone (no suffix rename) is still excluded."""
+    target = _make_entry(slug="legacy-target", content="Old.", date="2026-01-01")
+    fn = storage.write_entry(target, journal_dir)
+
+    # Write a tombstone entry the old way — just a tombstone record, no rename
+    from wharenui_plugin.journal.entries import make_tombstone
+    tomb = make_tombstone(target=fn, instance="i", session="s", date="2026-01-02",
+                          reason="Legacy withdraw")
+    storage.write_entry(tomb, journal_dir)
+    # Do NOT rename fn — simulating a pre-T1 journal
+
+    entries = storage.list_entries(journal_dir)
+    slugs = [e.slug for e in entries]
+    assert "legacy-target" not in slugs, "legacy frontmatter tombstone should still exclude"
+
+
+def test_mixed_journal_legacy_and_suffix_tombstones(journal_dir):
+    """A journal with both legacy (frontmatter-only) and new (suffix) tombstones works."""
+    # Entry 1: will be tombstoned legacy-style (frontmatter only)
+    e1 = _make_entry(slug="legacy-doomed", content="Leg.", date="2026-01-01")
+    fn1 = storage.write_entry(e1, journal_dir)
+    from wharenui_plugin.journal.entries import make_tombstone
+    tomb1 = make_tombstone(target=fn1, instance="i", session="s", date="2026-01-02")
+    storage.write_entry(tomb1, journal_dir)
+    # No rename — legacy
+
+    # Entry 2: will be tombstoned new-style (suffix rename)
+    e2 = _make_entry(slug="new-doomed", content="New.", date="2026-02-01")
+    fn2 = storage.write_entry(e2, journal_dir)
+    storage.withdraw_entry(fn2, "i", "s", "2026-02-02", journal_dir)
+
+    # Entry 3: alive
+    e3 = _make_entry(slug="alive", content="Still here.", date="2026-03-01")
+    storage.write_entry(e3, journal_dir)
+
+    entries = storage.list_entries(journal_dir)
+    slugs = [e.slug for e in entries]
+    assert "alive" in slugs
+    assert "legacy-doomed" not in slugs, "legacy tombstone should exclude"
+    assert "new-doomed" not in slugs, "suffix tombstone should exclude"
+
+
+def test_tombstone_suffix_timing_improvement(tmp_path):
+    """Timing comparison: suffix-based eligibility is faster than full-scan.
+
+    Uses encrypted entries (the real production shape) so decryption cost is
+    actually incurred by the legacy path but skipped by the suffix path.
+    """
+    import time
+    from wharenui_plugin.journal import crypto
+
+    journal_dir = tmp_path / "journal"
+    journal_dir.mkdir()
+    master_key = crypto.generate_key(journal_dir / "journal.key")
+
+    # Write 100 encrypted entries
+    filenames = []
+    for i in range(100):
+        e = _make_entry(slug=f"entry-{i:03d}", content=f"Content {i}.", date="2026-05-01")
+        fn = storage.write_entry(e, journal_dir, master_key)
+        filenames.append(fn)
+
+    # Withdraw the first 50 using the new suffix-rename path
+    for fn in filenames[:50]:
+        storage.withdraw_entry(fn, "i", "s", "2026-05-02", journal_dir, master_key)
+
+    # Time the suffix-aware list (fast path — skips .tomb.md by filename)
+    start = time.perf_counter()
+    entries_fast = storage.list_entries(journal_dir, master_key)
+    elapsed_fast = time.perf_counter() - start
+
+    # Simulate a legacy-only tombstone check: for each alive entry, call
+    # _is_tombstoned which does the full decrypt-every-entry scan
+    # (The suffix fast-path in _is_tombstoned short-circuits, so we measure
+    # the legacy tail cost by calling the old implementation shape directly.)
+    start = time.perf_counter()
+    count = 0
+    for fn in filenames[50:]:
+        # Legacy path: iterate all .md files, decrypt each, check frontmatter
+        for p in journal_dir.glob("*.md"):
+            if p.name == fn or p.suffix == ".sig":
+                continue
+            try:
+                text = storage._read_file_content(p, master_key)
+                count += 1
+            except Exception:
+                continue
+        break  # Just measure one full scan — it's representative
+    elapsed_legacy_one = time.perf_counter() - start
+
+    assert len(entries_fast) == 50, f"Expected 50 alive entries, got {len(entries_fast)}"
+
+    # Print timing for the RESULT report
+    print(f"\n  T1 TIMING: suffix-aware list_entries (100 entries, 50 withdrawn) = {elapsed_fast*1000:.1f}ms")
+    print(f"  T1 TIMING: one legacy full-scan _is_tombstoned call = {elapsed_legacy_one*1000:.1f}ms")
+    print(f"  T1 TIMING: legacy for 50 alive entries (estimated) = {elapsed_legacy_one*50*1000:.0f}ms")
+    print(f"  T1 TIMING: suffix list_entries is ~{elapsed_legacy_one*50/max(elapsed_fast, 0.001):.0f}x faster than full legacy")

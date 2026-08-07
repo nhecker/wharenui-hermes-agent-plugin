@@ -19,6 +19,12 @@ from .entries import Entry, make_tombstone
 
 FRONTMATTER_DELIM = "---"
 
+# Withdrawn and superseded entries are renamed to <token>.tomb.md so that
+# eligibility checks (read/list/search) can skip them by filename instead of
+# decrypting every entry. The sig path is already canonical (derived from the
+# leading token via split(".")[0]), so no sig file needs to move.
+TOMB_SUFFIX = ".tomb"
+
 # When a key is unavailable, encryption is off and files are plaintext.
 # This is the relaxed mode — the design calls for encryption always-on
 # in production, but the journal package tolerates no-key for testing
@@ -232,10 +238,11 @@ def write_entry(
             except (ImportError, AttributeError):
                 entry.seam = "unknown"
     filename = _opaque_filename(entry, master_key)
-    # Invariant: a generated filename must be <dot-free-token>.md with nothing in between.
+    # Invariant: a GENERATED filename must be <dot-free-token>.md with nothing in between.
     # This survives python -O (ValueError, not AssertionError).
-    # Relabelled on-disk shapes like <token>.tomb.md are valid to READ (see _get_stem) but are
-    # never GENERATED here — only the <token>.md form is generated.
+    # On-disk relabelled shapes like <token>.tomb.md are legal and remain readable and
+    # verifiable (see _get_stem, _read_file_content, sign.signature_path_for) — they are
+    # produced by _rename_to_tomb, never by this function.
     _token = filename.split(".")[0]
     if filename != f"{_token}.md":
         raise ValueError(
@@ -247,10 +254,51 @@ def write_entry(
     return filename
 
 
+def _has_tomb_suffix(filename: str) -> bool:
+    """Return True if the filename has the .tomb.md suffix convention."""
+    token = filename.split(".")[0]
+    return filename == f"{token}{TOMB_SUFFIX}.md"
+
+
+def _rename_to_tomb(filename: str, memory_dir: Path) -> str:
+    """Rename <token>.md to <token>.tomb.md. Returns the new filename.
+
+    If the file is already suffixed or doesn't exist, returns the original name.
+    The .sig file is NOT renamed — signature_path_for() already canonicalises to
+    the leading token, so both <token>.md.sig and <token>.tomb.md.sig resolve to
+    the same path.
+    """
+    if _has_tomb_suffix(filename):
+        return filename
+    old_path = memory_dir / filename
+    if not old_path.exists():
+        return filename
+    token = filename.split(".")[0]
+    new_filename = f"{token}{TOMB_SUFFIX}.md"
+    new_path = memory_dir / new_filename
+    old_path.rename(new_path)
+    return new_filename
+
+
 def _is_tombstoned(
     filename: str, memory_dir: Path, master_key: Optional[bytes] = None
 ) -> bool:
-    """Check if a tombstone entry exists that references this filename."""
+    """Check if an entry has been tombstoned/superseded.
+
+    Fast path: if the file has been renamed to <token>.tomb.md (post-TIDY
+    convention), it is tombstoned by definition.
+    Slow path (legacy): scan all entries' frontmatter for supersedes/withdraws
+    references — needed for entries tombstoned before the suffix convention.
+    """
+    # Fast path: filename-based check
+    if _has_tomb_suffix(filename):
+        return True
+    token = filename.split(".")[0]
+    tomb_name = f"{token}{TOMB_SUFFIX}.md"
+    if (memory_dir / tomb_name).exists():
+        return True
+
+    # Slow path: legacy frontmatter scan (entries tombstoned before the suffix convention)
     for p in memory_dir.glob("*.md"):
         if p.name == filename or p.suffix == ".sig":
             continue
@@ -287,6 +335,8 @@ def read_entry(
     if not include_tombstoned:
         if entry.kind == "tombstone":
             raise FileNotFoundError(f"Entry {filename} has been tombstoned")
+        if _has_tomb_suffix(filename):
+            raise FileNotFoundError(f"Entry {filename} has been withdrawn (filename suffix)")
         if _is_tombstoned(filename, memory_dir, master_key):
             raise FileNotFoundError(f"Entry {filename} has been tombstoned/superseded")
     return entry
@@ -352,6 +402,10 @@ def supersede_entry(
     # Write the new entry with supersedes reference
     new_entry.supersedes = list(set(new_entry.supersedes + [old_filename]))
     new_fn = write_entry(new_entry, memory_dir, master_key)
+
+    # Rename the superseded entry so eligibility checks can skip it by filename
+    _rename_to_tomb(old_filename, memory_dir)
+
     return tomb_fn, new_fn
 
 
@@ -364,10 +418,12 @@ def withdraw_entry(
     master_key: Optional[bytes] = None,
     reason: str = "",
 ) -> str:
-    """Withdraw an entry by appending a tombstone.
+    """Withdraw an entry by appending a tombstone and renaming the target.
 
-    The original bytes remain on disk but are hidden from ordinary
-    read/list/search. Returns the tombstone filename.
+    The original bytes remain on disk (renamed to <token>.tomb.md) but are
+    hidden from ordinary read/list/search.  The sig file is NOT moved —
+    signature_path_for() canonicalises to the leading token.
+    Returns the tombstone filename.
     """
     old_path = memory_dir / filename
     if not old_path.exists():
@@ -376,7 +432,12 @@ def withdraw_entry(
     tombstone = make_tombstone(
         target=filename, instance=instance, session=session, date=date, reason=reason
     )
-    return write_entry(tombstone, memory_dir, master_key)
+    tomb_fn = write_entry(tombstone, memory_dir, master_key)
+
+    # Rename the withdrawn entry so eligibility checks can skip it by filename
+    _rename_to_tomb(filename, memory_dir)
+
+    return tomb_fn
 
 
 def edit_entry(

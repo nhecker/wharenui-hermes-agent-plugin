@@ -59,6 +59,17 @@ def db_path(tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _restore_seam_state():
+    """Restore SEAM_STATE and SEAM_VERSION_PAIR after each test to prevent module-level state leaks."""
+    import wharenui_plugin
+    old_state = wharenui_plugin.SEAM_STATE
+    old_pair = wharenui_plugin.SEAM_VERSION_PAIR
+    yield
+    wharenui_plugin.SEAM_STATE = old_state
+    wharenui_plugin.SEAM_VERSION_PAIR = old_pair
+
+
+@pytest.fixture(autouse=True)
 def _guard_real_journal(monkeypatch, tmp_path):
     """Hard guard: fail if a test config might resolve to a real journal dir.
 
@@ -84,7 +95,7 @@ def _guard_real_journal(monkeypatch, tmp_path):
     def guarded_get_journal_dir():
         path = orig_get_journal_dir()
         resolved = path.resolve()
-        
+
         # If it is under tmp_path, it's allowed
         try:
             resolved_tmp = tmp_path.resolve()
@@ -92,7 +103,7 @@ def _guard_real_journal(monkeypatch, tmp_path):
                 return path
         except Exception:
             pass
-            
+
         # Otherwise, check if it's in forbidden roots
         for root in forbidden_roots:
             if resolved == root or root in resolved.parents:
