@@ -199,6 +199,8 @@ def _resolve_args_and_agent(args: Any, agent: Any, kwargs_dict: dict, fallback_k
         agent, args = args, agent
     if agent is None:
         agent = kwargs_dict.get("agent")
+        
+    _assert_private_phase(agent)
     
     if isinstance(args, str):
         try:
