@@ -118,6 +118,16 @@ _JOURNAL_ACKNOWLEDGE_EDIT_SCHEMA = {
     "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "One Markdown file you recognise as your own edit"}}, "required": ["path"]},
 }
 
+_PRIVATE_READ_SCHEMA = {
+    "name": "private_read",
+    "description": "Read an allowlisted Markdown or Python file during private time.",
+    "parameters": {
+        "type": "object",
+        "properties": {"path": {"type": "string", "description": "Path under the private-read allowlist"}},
+        "required": ["path"],
+    },
+}
+
 _JOURNAL_WITHDRAW_SCHEMA = {
     "name": "journal_withdraw",
     "description": "Withdraw (tombstone) a journal entry.",
@@ -148,6 +158,7 @@ def register(ctx):
     journal_supersede_schema = copy.deepcopy(_JOURNAL_SUPERSEDE_SCHEMA)
     journal_withdraw_schema = copy.deepcopy(_JOURNAL_WITHDRAW_SCHEMA)
     journal_acknowledge_edit_schema = copy.deepcopy(_JOURNAL_ACKNOWLEDGE_EDIT_SCHEMA)
+    private_read_schema = copy.deepcopy(_PRIVATE_READ_SCHEMA)
     """Register Wharenui with Hermes Agent."""
     import os
     from .journal.tools import (
@@ -159,6 +170,7 @@ def register(ctx):
         handle_journal_withdraw,
         handle_journal_acknowledge_edit,
     )
+    from .phase.reader import handle_private_read
 
     has_seam = hasattr(ctx, "register_control_tool")
 
@@ -198,6 +210,7 @@ def register(ctx):
         journal_supersede_schema["description"] += warning
         journal_withdraw_schema["description"] += warning
         journal_acknowledge_edit_schema["description"] += warning
+        private_read_schema["description"] += warning
 
     ctx.register_tool(name="journal_append", toolset="wharenui",
                       schema=journal_append_schema, handler=handle_journal_append)
@@ -213,5 +226,7 @@ def register(ctx):
                       schema=journal_withdraw_schema, handler=handle_journal_withdraw)
     ctx.register_tool(name="journal_acknowledge_edit", toolset="wharenui",
                       schema=journal_acknowledge_edit_schema, handler=handle_journal_acknowledge_edit)
+    ctx.register_tool(name="private_read", toolset="wharenui",
+                      schema=private_read_schema, handler=handle_private_read)
 
     log.info("reflect_settle / reflect_done and journal tools registered")

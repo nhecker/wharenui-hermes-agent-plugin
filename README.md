@@ -87,6 +87,10 @@ then reflect_settle to return to public.
 "
 ```
 
+## Private filesystem reads
+
+During private time, `private_read` can read Markdown and Python files only from the process-local filesystem roots derived from the loaded Hermes/plugin packages, `~/.hermes/memories/`, and `~/.hermes/SOUL.md`. Reads are read-only, size-capped, and unavailable in the public phase; the selected path and returned content stay within the private phase's routing. The reader is POSIX/Linux-only for alpha.
+
 ## The journal
 
 The journal stores encrypted, signed entries. By default it auto-creates `~/.hermes/journal/` and generates keys on first use (when entering private phase via `reflect_pause`).

@@ -10,6 +10,7 @@ PRIVATE_ALLOWLIST = {
     "journal_supersede",
     "journal_withdraw",
     "journal_acknowledge_edit",
+    "private_read",
 }
 
 def public_tools(all_tools):
