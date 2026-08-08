@@ -129,7 +129,7 @@ Journal entries are encrypted at rest using a key derived from the canonical fil
 Readmes <TODO: list these> are unmodified, but signed by a detached signature file.
 
 <TODO: this is the section worth the most care>
-- What "private" guarantees and what it does **not**.
+- What "private" guarantees and what it does **not**. (Disclaimer: The active inference provider still processes private tokens unless inference is local. The egress channels are sealed, but provider-side processing still occurs).
 - Key handling: where master/signing keys live, what compromise means.
 - What an observer of the public surface can and cannot infer.
 - The five egress channels and how each is sealed.
