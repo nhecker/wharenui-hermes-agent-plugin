@@ -1,7 +1,6 @@
 """WharePhaseHandler — real same-context private runner."""
 from __future__ import annotations
 import logging
-from agent.phase_control import ControlOutcome
 from ..phase.toolset import private_tools
 from ..phase.prompt import PRIVATE_PROMPT
 from pathlib import Path
@@ -14,6 +13,8 @@ MAX_PRIVATE_TURNS = 15
 class WharePhaseHandler:
 
     def begin(self, args: dict) -> ControlOutcome:
+        from agent.phase_control import ControlOutcome
+
         return ControlOutcome(
             action="enter", handler="reflect_pause",
             tool_result="reflecting...",
@@ -21,6 +22,8 @@ class WharePhaseHandler:
 
     def run(self, agent, messages, effective_task_id):
         """Bounded private loop via run_subturn."""
+        from agent.phase_control import ControlOutcome
+
         if not getattr(agent, "_wharenui_wake_tape_presented", False):
             try:
                 tape = assemble_wake_tape(journal_tools.get_journal_dir(), Path.home() / ".hermes" / "memories", master_key=journal_tools.get_journal_keys(journal_tools.get_journal_dir())[0])

@@ -1,5 +1,8 @@
 from datetime import datetime, timezone
+import os
 from pathlib import Path
+import subprocess
+import sys
 from unittest.mock import patch
 import pytest
 from wharenui_plugin.journal import crypto, storage, tools
@@ -54,6 +57,19 @@ def test_instance_latch_is_not_module_global(tmp_path):
             with pytest.raises(AssertionError): WharePhaseHandler().run(agent, messages, "t")
             assert "SYNTHETIC" in [m["content"] for m in messages]
             assert agent._wharenui_wake_tape_presented is True
+
+def test_handler_import_is_plugin_only():
+    plugin_dir = Path(__file__).resolve().parents[1]
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(plugin_dir)
+    result = subprocess.run(
+        [sys.executable, "-c", "import wharenui_plugin.phase.handler"],
+        cwd=plugin_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
 
 def test_cap_warning_is_actionable_and_stable():
     assert "pinned=false" in flag_cap_warning("pinned") and "desk=false" in flag_cap_warning("desk")
