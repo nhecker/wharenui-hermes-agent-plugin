@@ -92,3 +92,20 @@ def test_signature_path_for():
     p = Path("/tmp/memory/2026-04-07_entry.md")
     sig_p = sign.signature_path_for(p)
     assert sig_p == Path("/tmp/memory/2026-04-07_entry.md.sig")
+
+def test_sign_directories_is_non_recursive_md_only_and_adopts(tmp_path, signing_key):
+    root = tmp_path / "private"; excluded = root / "cache"; nested = root / "nested"
+    root.mkdir(); excluded.mkdir(); nested.mkdir()
+    (root / "a.md").write_bytes(b"a"); (root / "a.txt").write_bytes(b"no")
+    (excluded / "b.md").write_bytes(b"excluded"); (nested / "c.md").write_bytes(b"nested")
+    states = sign.sign_directories([root, excluded], signing_key)
+    assert states == {str(root / "a.md"): "adopted unsigned"}
+    assert (root / "a.md.sig").exists() and not (excluded / "b.md.sig").exists()
+
+
+def test_verify_directories_warns_missing_and_invalid_and_context(tmp_path, signing_key, capsys):
+    good = tmp_path / "good.md"; good.write_bytes(b"good")
+    bad = tmp_path / "bad.md"; bad.write_bytes(b"bad"); sign.write_signature(bad, signing_key); bad.write_bytes(b"changed")
+    context = []; states = sign.verify_directories([tmp_path], signing_key.public_key(), context)
+    assert states[str(good)] == "adopted unsigned" and states[str(bad)] == "invalid"
+    err = capsys.readouterr().err; assert "missing" in err and "invalid" in err; assert len(context) == 2

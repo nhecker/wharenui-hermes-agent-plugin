@@ -335,3 +335,11 @@ def test_open_notebook_requires_explicit_opt_in():
     output = result.stdout + result.stderr
     assert "OPT_IN_REQUIRED: ok" in output, f"Opt-in check failed:\n{output}"
     assert result.returncode == 0, f"Subprocess exit {result.returncode}:\n{output}"
+
+
+def test_tighten_permissions_refuses_outside_root_before_chmod(tmp_path):
+    target = tmp_path / "outside"; target.mkdir(mode=0o777)
+    child = target / "secret.md"; child.write_text("x"); os.chmod(child, 0o666)
+    before = (target.stat().st_mode & 0o777, child.stat().st_mode & 0o777)
+    with pytest.raises(PermissionError): jtools.tighten_permissions(target, tmp_path / "allowed-private")
+    assert (target.stat().st_mode & 0o777, child.stat().st_mode & 0o777) == before

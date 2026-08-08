@@ -26,7 +26,12 @@ class WharePhaseHandler:
 
         if not getattr(agent, "_wharenui_wake_tape_presented", False):
             try:
-                tape = assemble_wake_tape(journal_tools.get_journal_dir(), Path.home() / ".hermes" / "memories", master_key=journal_tools.get_journal_keys(journal_tools.get_journal_dir())[0])
+                journal_dir = journal_tools.get_journal_dir()
+                bootstrap_context = []
+                master_key = journal_tools.get_journal_keys(journal_dir, context=bootstrap_context)[0]
+                for warning in bootstrap_context:
+                    messages.append({"role": "user", "content": warning})
+                tape = assemble_wake_tape(journal_dir, Path.home() / ".hermes" / "memories", master_key=master_key)
                 if tape:
                     messages.append({"role": "user", "content": tape})
             except Exception as exc:
