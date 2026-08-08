@@ -2,7 +2,7 @@
 from __future__ import annotations
 import logging
 from ..phase.toolset import private_tools
-from ..phase.prompt import PRIVATE_PROMPT
+from ..phase.prompt import get_private_prompt
 from pathlib import Path
 from ..journal.wake import assemble_wake_tape
 from ..journal import tools as journal_tools
@@ -49,14 +49,8 @@ class WharePhaseHandler:
             (t.get("function", {}) or {}).get("name")
             for t in private_tool_set
         }
-        prompt = PRIVATE_PROMPT
-        if getattr(self, "seam_state", None) == "unverified":
-            warning_prose = (
-                "⚠️ WARNING: The security seam version mismatch was overridden. "
-                "The privacy floor is UNVERIFIED. Egress hooks might not be fully wired. "
-                "Verify security status before writing highly sensitive content.\n\n"
-            )
-            prompt = warning_prose + prompt
+        from wharenui_plugin import get_seam_state
+        prompt = get_private_prompt(get_seam_state())
         messages.append({"role": "user", "content": prompt})
         for turn_i in range(MAX_PRIVATE_TURNS):
             result = agent.run_subturn(
