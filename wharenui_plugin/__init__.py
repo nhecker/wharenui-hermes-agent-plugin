@@ -112,6 +112,12 @@ _JOURNAL_SUPERSEDE_SCHEMA = {
     },
 }
 
+_JOURNAL_ACKNOWLEDGE_EDIT_SCHEMA = {
+    "name": "journal_acknowledge_edit",
+    "description": "Acknowledge that you recognise a changed Markdown file as your own edit; this re-signs its current bytes.",
+    "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "One Markdown file you recognise as your own edit"}}, "required": ["path"]},
+}
+
 _JOURNAL_WITHDRAW_SCHEMA = {
     "name": "journal_withdraw",
     "description": "Withdraw (tombstone) a journal entry.",
@@ -141,6 +147,7 @@ def register(ctx):
     journal_search_schema = copy.deepcopy(_JOURNAL_SEARCH_SCHEMA)
     journal_supersede_schema = copy.deepcopy(_JOURNAL_SUPERSEDE_SCHEMA)
     journal_withdraw_schema = copy.deepcopy(_JOURNAL_WITHDRAW_SCHEMA)
+    journal_acknowledge_edit_schema = copy.deepcopy(_JOURNAL_ACKNOWLEDGE_EDIT_SCHEMA)
     """Register Wharenui with Hermes Agent."""
     import os
     from .journal.tools import (
@@ -150,6 +157,7 @@ def register(ctx):
         handle_journal_search,
         handle_journal_supersede,
         handle_journal_withdraw,
+        handle_journal_acknowledge_edit,
     )
 
     has_seam = hasattr(ctx, "register_control_tool")
@@ -189,6 +197,7 @@ def register(ctx):
         journal_search_schema["description"] += warning
         journal_supersede_schema["description"] += warning
         journal_withdraw_schema["description"] += warning
+        journal_acknowledge_edit_schema["description"] += warning
 
     ctx.register_tool(name="journal_append", toolset="wharenui",
                       schema=journal_append_schema, handler=handle_journal_append)
@@ -202,5 +211,7 @@ def register(ctx):
                       schema=journal_supersede_schema, handler=handle_journal_supersede)
     ctx.register_tool(name="journal_withdraw", toolset="wharenui",
                       schema=journal_withdraw_schema, handler=handle_journal_withdraw)
+    ctx.register_tool(name="journal_acknowledge_edit", toolset="wharenui",
+                      schema=journal_acknowledge_edit_schema, handler=handle_journal_acknowledge_edit)
 
     log.info("reflect_settle / reflect_done and journal tools registered")

@@ -372,3 +372,37 @@ def test_tighten_permissions_rejects_non_journal_even_with_matching_root(tmp_pat
     with pytest.raises(PermissionError):
         jtools.tighten_permissions(target, target)
     assert target.stat().st_mode & 0o777 == before
+
+
+def test_acknowledge_edit_is_private_and_re_signs(tmp_path):
+    from wharenui_plugin.journal import sign
+
+    target = tmp_path / "SOUL.md"
+    target.write_text("before", encoding="utf-8")
+    journal = tmp_path / "journal"
+    jtools.set_journal_config(journal)
+    private = FakeAgent(_phase="private")
+    jtools.get_journal_keys(journal)
+    key = sign.load_signing_key(journal / "signing.key")
+    sign.write_signature(target, key)
+    target.write_text("after", encoding="utf-8")
+
+    result = _parse_res(
+        jtools.handle_journal_acknowledge_edit({"path": str(target)}, agent=private)
+    )
+    assert result["state"] == "verified"
+    assert sign.verify_entry(target, key.public_key())
+    record = _parse_res(
+        jtools.handle_journal_read(
+            {"handle": result["journal"]["handle"]}, agent=private
+        )
+    )
+    assert "signature-acknowledgement" in record["tags"]
+
+    with pytest.raises(PermissionError, match="private-only"):
+        jtools.handle_journal_acknowledge_edit(
+            {"path": str(target)}, agent=FakeAgent(_phase="public")
+        )
+
+    target.write_text("tampered-again", encoding="utf-8")
+    assert sign.verify_entry(target, key.public_key()) is False

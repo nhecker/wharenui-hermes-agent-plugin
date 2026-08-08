@@ -160,7 +160,7 @@ def sign_directories(directories: Iterable[Path], signing_key: ed25519.Ed25519Pr
                 write_signature(path, signing_key)
             states[str(path)] = state
             if state == "invalid":
-                message = f"Signature invalid for adopted file {path}; session continues."
+                message = f"Signature invalid for changed file {path}; the file changed since it was last signed. If you recognise the change as your own, use journal_acknowledge_edit in private time."
                 _warn(message, context)
             elif state == "adopted unsigned":
                 message = f"Signature adopted unsigned file this run: {path}"
@@ -176,8 +176,8 @@ def verify_directories(directories: Iterable[Path], verifying_key, context=None)
             state = _signature_state(path, verifying_key)
             states[str(path)] = state
             if state in ("invalid", "adopted unsigned"):
-                message = (f"Signature invalid for adopted file {path}; session continues."
+                message = (f"Signature invalid for changed file {path}; the file changed since it was last signed. If you recognise the change as your own, use journal_acknowledge_edit in private time."
                            if state == "invalid" else
-                           f"Signature missing for adopted file {path}; session continues.")
+                           f"Signature missing for adopted file {path}; it can be adopted when appropriate in private time.")
                 _warn(message, context)
     return states

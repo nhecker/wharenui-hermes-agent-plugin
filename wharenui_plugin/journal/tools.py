@@ -452,6 +452,29 @@ def handle_journal_supersede(args: Any = None, agent: Any = None, **kwargs) -> s
     })
 
 
+def handle_journal_acknowledge_edit(args: Any = None, agent: Any = None, **kwargs) -> str:
+    """Re-sign one changed Markdown file the private agent recognises as its edit."""
+    args, agent = _resolve_args_and_agent(args, agent, kwargs, "path")
+    raw_path = args.get("path")
+    if not raw_path:
+        raise ValueError("journal_acknowledge_edit requires 'path'")
+    path = Path(raw_path).expanduser().resolve()
+    eligible = tuple(sign._markdown_files(path))
+    if eligible != (path,):
+        raise ValueError("Only one existing, eligible Markdown file may be acknowledged")
+    memory_dir = get_journal_dir()
+    _mkey, skey, vkey = get_journal_keys(memory_dir)
+    if skey is None or vkey is None:
+        raise FileNotFoundError("Signing key unavailable")
+    if sign._signature_state(path, vkey) != "invalid":
+        raise ValueError("File is not currently changed since signing")
+    sign.write_signature(path, skey)
+    if sign._signature_state(path, vkey) != "verified":
+        raise ValueError("Acknowledgement did not produce a verified signature")
+    record = handle_journal_append({"content": f"Acknowledged own edit and re-signed: {path}", "kind": "reference", "tags": ["signature-acknowledgement"]}, agent=agent)
+    return json.dumps({"status": "success", "path": str(path), "state": "verified", "journal": json.loads(record)})
+
+
 def handle_journal_withdraw(args: Any = None, agent: Any = None, **kwargs) -> str:
     args, agent = _resolve_args_and_agent(args, agent, kwargs, "handle")
     _assert_private_phase(agent)
