@@ -343,3 +343,32 @@ def test_tighten_permissions_refuses_outside_root_before_chmod(tmp_path):
     before = (target.stat().st_mode & 0o777, child.stat().st_mode & 0o777)
     with pytest.raises(PermissionError): jtools.tighten_permissions(target, tmp_path / "allowed-private")
     assert (target.stat().st_mode & 0o777, child.stat().st_mode & 0o777) == before
+
+
+
+def test_bootstrap_signs_hermes_markdown_without_mutating_markdown(tmp_path):
+    hermes_root = tmp_path / "hermes"
+    journal = hermes_root / "journal"
+    memories = hermes_root / "memories"
+    journal.mkdir(parents=True)
+    memories.mkdir()
+    soul = hermes_root / "SOUL.md"
+    user = memories / "USER.md"
+    soul.write_bytes(b"soul")
+    user.write_bytes(b"user")
+    before = {p: (p.read_bytes(), p.stat().st_mode & 0o777, p.stat().st_mtime_ns) for p in (soul, user)}
+    jtools.get_journal_keys(journal)
+    assert soul.with_name("SOUL.md.sig").exists()
+    assert user.with_name("USER.md.sig").exists()
+    after = {p: (p.read_bytes(), p.stat().st_mode & 0o777, p.stat().st_mtime_ns) for p in (soul, user)}
+    assert before == after
+
+
+
+def test_tighten_permissions_rejects_non_journal_even_with_matching_root(tmp_path):
+    target = tmp_path / "not-journal"
+    target.mkdir(mode=0o777)
+    before = target.stat().st_mode & 0o777
+    with pytest.raises(PermissionError):
+        jtools.tighten_permissions(target, target)
+    assert target.stat().st_mode & 0o777 == before

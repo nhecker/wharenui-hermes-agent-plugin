@@ -58,10 +58,8 @@ def check_journal_safety(memory_dir: Path) -> None:
 
 def tighten_permissions(memory_dir: Path, allowed_root: Path | None = None) -> None:
     memory_dir = Path(memory_dir).resolve()
-    if allowed_root is not None:
-        allowed_root = Path(allowed_root).resolve()
-        if memory_dir != allowed_root and allowed_root not in memory_dir.parents:
-            raise PermissionError(f"Refusing permission changes outside allowed private root: {memory_dir}")
+    if memory_dir.name != "journal" or allowed_root is None or memory_dir != Path(allowed_root).resolve():
+        raise PermissionError(f"Refusing permission changes outside the journal directory: {memory_dir}")
     if not memory_dir.exists():
         return
     if (memory_dir.stat().st_mode & 0o777) != 0o700:
@@ -103,8 +101,8 @@ def get_journal_dir() -> Path:
 def get_journal_keys(memory_dir: Path, context=None) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
     check_journal_safety(memory_dir)
     # Keep chmod scoped to the private Hermes tree; reject before any chmod.
-    private_root = Path.home() / ".hermes"
-    tighten_permissions(memory_dir, private_root if memory_dir.is_relative_to(private_root) else None)
+    if memory_dir.name == "journal":
+        tighten_permissions(memory_dir, memory_dir)
 
     key_file = memory_dir / "journal.key"
     key_env = os.environ.get("WHARENUI_KEY")
@@ -129,7 +127,8 @@ def get_journal_keys(memory_dir: Path, context=None) -> tuple[Optional[bytes], O
         skey = sign.generate_signing_key(sig_file)
     vkey = skey.public_key() if skey else None
     if skey and vkey:
-        sign.sign_directories((memory_dir,), skey, vkey, context=context)
+        hermes_root = memory_dir.parent
+        sign.sign_directories((hermes_root / "SOUL.md", hermes_root / "memories"), skey, vkey, context=context)
     return mkey, skey, vkey
 
 
