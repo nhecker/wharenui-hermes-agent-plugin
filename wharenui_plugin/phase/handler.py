@@ -10,6 +10,24 @@ from ..journal import tools as journal_tools
 log = logging.getLogger("wharenui_plugin.phase.handler")
 MAX_PRIVATE_TURNS = 15
 
+def present_wake_tape(agent, messages):
+    """Present the wake tape once per agent instance."""
+    if getattr(agent, "_wharenui_wake_tape_presented", False):
+        return
+    try:
+        journal_dir = journal_tools.get_journal_dir()
+        bootstrap_context = []
+        master_key = journal_tools.get_journal_keys(journal_dir, context=bootstrap_context)[0]
+        for warning in bootstrap_context:
+            messages.append({"role": "user", "content": warning})
+        tape = assemble_wake_tape(journal_dir, Path.home() / ".hermes" / "memories", master_key=master_key)
+        if tape:
+            messages.append({"role": "user", "content": tape})
+    except Exception as exc:
+        log.warning("wake tape assembly failed: %s", exc)
+    agent._wharenui_wake_tape_presented = True
+
+
 class WharePhaseHandler:
 
     def begin(self, args: dict) -> ControlOutcome:
@@ -24,19 +42,7 @@ class WharePhaseHandler:
         """Bounded private loop via run_subturn."""
         from agent.phase_control import ControlOutcome
 
-        if not getattr(agent, "_wharenui_wake_tape_presented", False):
-            try:
-                journal_dir = journal_tools.get_journal_dir()
-                bootstrap_context = []
-                master_key = journal_tools.get_journal_keys(journal_dir, context=bootstrap_context)[0]
-                for warning in bootstrap_context:
-                    messages.append({"role": "user", "content": warning})
-                tape = assemble_wake_tape(journal_dir, Path.home() / ".hermes" / "memories", master_key=master_key)
-                if tape:
-                    messages.append({"role": "user", "content": tape})
-            except Exception as exc:
-                log.warning("wake tape assembly failed: %s", exc)
-            agent._wharenui_wake_tape_presented = True
+        present_wake_tape(agent, messages)
         task_id = effective_task_id or "private"
         private_tool_set = private_tools(getattr(agent, "tools", []) or [])
         private_tool_names = {

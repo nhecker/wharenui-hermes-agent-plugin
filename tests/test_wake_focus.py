@@ -46,17 +46,25 @@ def test_append_and_edit_reject_third_flag(tmp_path):
     assert storage.read_entry(fn, tmp_path, key).pinned is False
 
 def test_instance_latch_is_not_module_global(tmp_path):
-    import sys; sys.path.insert(0, "/root/work/wharenui-hermes-agent")
-    from wharenui_plugin.phase.handler import WharePhaseHandler
+    from wharenui_plugin.phase.handler import present_wake_tape
     class Agent:
         tools = []
         def run_subturn(self, *args, **kwargs): raise AssertionError("expected wake insertion before subturn")
     with patch("wharenui_plugin.phase.handler.assemble_wake_tape", return_value="SYNTHETIC"), patch("wharenui_plugin.phase.handler.journal_tools.get_journal_dir", return_value=tmp_path):
         for agent in (Agent(), Agent()):
             messages = []
-            with pytest.raises(AssertionError): WharePhaseHandler().run(agent, messages, "t")
+            present_wake_tape(agent, messages)
             assert "SYNTHETIC" in [m["content"] for m in messages]
             assert agent._wharenui_wake_tape_presented is True
+
+def test_test_files_have_no_dev_box_paths():
+    test_root = Path(__file__).resolve().parent
+    absolute_root = "/" + "root/"
+    for path in test_root.glob("test_*.py"):
+        source = path.read_text()
+        assert absolute_root not in source, f"developer path in {path}"
+        assert not ("sys.path.insert" in source and absolute_root in source), f"absolute sys.path insert in {path}"
+
 
 def test_handler_import_is_plugin_only():
     plugin_dir = Path(__file__).resolve().parents[1]

@@ -11,7 +11,7 @@ from pathlib import Path
 def test_open_notebook_against_real_stock_hermes(tmp_path):
     """M3: plugin registers in open-notebook mode against a real stock Hermes tree.
 
-    Uses the stock tree at /root/work/hermes-agent (upstream c2e45b555) which has
+    Uses the stock tree supplied by STOCK_HERMES_DIR (upstream c2e45b555) which has
     agent/__init__.py but NO agent/phase_control.py. This is the deployment we
     actually ship into — not the PYTHONPATH-only test that FIX3 covers.
     """
@@ -19,7 +19,9 @@ def test_open_notebook_against_real_stock_hermes(tmp_path):
     if os.environ.get("REQUIRE_STOCK_HERMES") == "1":
         assert stock_env is not None, "STOCK_HERMES_DIR must be set when REQUIRE_STOCK_HERMES is 1"
         
-    stock_root = Path(stock_env or "/root/work/hermes-agent")
+    if not stock_env:
+        pytest.skip("Stock Hermes tree not configured; skipping test.")
+    stock_root = Path(stock_env)
     
     try:
         exists = (stock_root / "agent" / "__init__.py").exists()
