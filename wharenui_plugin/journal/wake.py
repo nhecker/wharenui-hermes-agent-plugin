@@ -17,25 +17,35 @@ def check_flag_cap(entries, flag: str, requested: bool) -> None:
         raise ValueError(flag_cap_warning(flag))
 
 def assemble_wake_tape(memory_dir: Path, markdown_dir: Path, now=None, rng=None, master_key=None) -> str:
+    """Assemble the seven wake sections from an eligible journal."""
     entries = storage.list_entries(memory_dir, master_key=master_key)
     if not entries:
         return ""
     now = now or datetime.now(timezone.utc)
     rng = rng or random
     eligible = list(entries)
-    pinned = [e for e in eligible if e.pinned][:PINNED_CAP]
-    desk = [e for e in eligible if e.desk][:DESK_CAP]
-    full = [e for e in eligible if not e.quiet]
-    selected = rng.choice(full) if full else None
+    pinned_all = [e for e in eligible if e.pinned]
+    desk_all = [e for e in eligible if e.desk]
+    pinned = pinned_all[:PINNED_CAP]
+    desk = desk_all[:DESK_CAP]
     loaded = {getattr(e, "filename", "") for e in pinned + desk}
-    if selected is not None and getattr(selected, "filename", "") in loaded:
-        selected = None
+    full = [e for e in eligible if not e.quiet and getattr(e, "filename", "") not in loaded]
+    selected = rng.choice(full) if full else None
+    listed = eligible[-8:][::-1]
     listing = "\n".join(
         f"- `{e.filename}` — {e.date or e.timestamp or 'undated'}"
         + (f" — {e.description}" if e.description else "")
-        for e in eligible[-8:][::-1]
-        if not e.quiet
+        for e in listed
     )
+    over_cap = []
+    if len(pinned_all) > PINNED_CAP:
+        over_cap.append(flag_cap_warning("pinned"))
+        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}" for e in pinned_all[PINNED_CAP:])
+    if len(desk_all) > DESK_CAP:
+        over_cap.append(flag_cap_warning("desk"))
+        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}" for e in desk_all[DESK_CAP:])
+    if over_cap:
+        listing += "\n" + "\n".join(over_cap)
     def blocks(items):
         return "\n\n".join(f"### `{e.filename}`\n\n{e.content.rstrip()}" for e in items)
     docs = []
