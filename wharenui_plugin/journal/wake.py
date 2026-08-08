@@ -40,10 +40,10 @@ def assemble_wake_tape(memory_dir: Path, markdown_dir: Path, now=None, rng=None,
     over_cap = []
     if len(pinned_all) > PINNED_CAP:
         over_cap.append(flag_cap_warning("pinned"))
-        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}" for e in pinned_all[PINNED_CAP:])
+        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}` — over-cap pinned" for e in pinned_all[PINNED_CAP:])
     if len(desk_all) > DESK_CAP:
         over_cap.append(flag_cap_warning("desk"))
-        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}" for e in desk_all[DESK_CAP:])
+        over_cap.extend(f"- `{getattr(e, 'slug', e.filename)}` — over-cap desk" for e in desk_all[DESK_CAP:])
     if over_cap:
         listing += "\n" + "\n".join(over_cap)
     def blocks(items):
