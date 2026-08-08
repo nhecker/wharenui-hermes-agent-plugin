@@ -109,3 +109,13 @@ def test_verify_directories_warns_missing_and_invalid_and_context(tmp_path, sign
     context = []; states = sign.verify_directories([tmp_path], signing_key.public_key(), context)
     assert states[str(good)] == "adopted unsigned" and states[str(bad)] == "invalid"
     err = capsys.readouterr().err; assert "missing" in err and "invalid" in err; assert len(context) == 2
+
+
+
+def test_sign_directories_explicit_file_still_respects_exclusions(tmp_path, signing_key):
+    journal = tmp_path / "journal"
+    journal.mkdir()
+    entry = journal / "entry.md"
+    entry.write_bytes(b"private")
+    assert sign.sign_directories([entry], signing_key) == {}
+    assert not entry.with_name("entry.md.sig").exists()

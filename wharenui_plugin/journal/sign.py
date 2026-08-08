@@ -21,6 +21,9 @@ SIGNING_EXCLUSIONS = {"journal", "journal_auto_test", "logs", "cache", "bin"}
 def _markdown_files(directory: Path):
     directory = Path(directory)
     if directory.is_file():
+        parent = directory.parent
+        if parent.name in SIGNING_EXCLUSIONS or parent.name.endswith("_cache"):
+            return ()
         return (directory,) if directory.suffix == ".md" else ()
     if not directory.is_dir() or directory.name in SIGNING_EXCLUSIONS or directory.name.endswith("_cache"):
         return ()
