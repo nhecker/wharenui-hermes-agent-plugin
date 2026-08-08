@@ -268,6 +268,10 @@ def handle_journal_append(args: Any = None, agent: Any = None, **kwargs) -> str:
         seam=_resolve_seam_value(),
     )
 
+    from .wake import check_flag_cap
+    check_flag_cap(storage.list_entries(memory_dir, master_key=mkey), "pinned", entry.pinned)
+    check_flag_cap(storage.list_entries(memory_dir, master_key=mkey), "desk", entry.desk)
+
     filename = storage.write_entry(entry, memory_dir, master_key=mkey)
     path = memory_dir / filename
     if skey:

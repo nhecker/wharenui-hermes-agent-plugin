@@ -530,6 +530,11 @@ def edit_entry(
     if not path.exists():
         raise FileNotFoundError(f"No entry: {filename}")
     entry = read_entry(filename, memory_dir, master_key, include_tombstoned=True)
+    from .wake import check_flag_cap
+    if pinned is True and not entry.pinned:
+        check_flag_cap(list_entries(memory_dir, master_key=master_key), "pinned", True)
+    if desk is True and not entry.desk:
+        check_flag_cap(list_entries(memory_dir, master_key=master_key), "desk", True)
 
     fm = _format_frontmatter(
         Entry(

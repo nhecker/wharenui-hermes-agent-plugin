@@ -4,6 +4,9 @@ import logging
 from agent.phase_control import ControlOutcome
 from ..phase.toolset import private_tools
 from ..phase.prompt import PRIVATE_PROMPT
+from pathlib import Path
+from ..journal.wake import assemble_wake_tape
+from ..journal import tools as journal_tools
 
 log = logging.getLogger("wharenui_plugin.phase.handler")
 MAX_PRIVATE_TURNS = 15
@@ -18,6 +21,14 @@ class WharePhaseHandler:
 
     def run(self, agent, messages, effective_task_id):
         """Bounded private loop via run_subturn."""
+        if not getattr(agent, "_wharenui_wake_tape_presented", False):
+            try:
+                tape = assemble_wake_tape(journal_tools.get_journal_dir(), Path.home() / ".hermes" / "memories", master_key=journal_tools.get_journal_keys(journal_tools.get_journal_dir())[0])
+                if tape:
+                    messages.append({"role": "user", "content": tape})
+            except Exception as exc:
+                log.warning("wake tape assembly failed: %s", exc)
+            agent._wharenui_wake_tape_presented = True
         task_id = effective_task_id or "private"
         private_tool_set = private_tools(getattr(agent, "tools", []) or [])
         private_tool_names = {
