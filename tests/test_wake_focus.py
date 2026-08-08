@@ -16,14 +16,18 @@ def section(tape, title):
 
 def test_wake_order_quiet_withdrawn_and_empty(tmp_path):
     key = crypto.generate_key(tmp_path / "journal.key")
-    storage.write_entry(entry("quiet", "QUIET", quiet=True), tmp_path, key)
+    quiet_fn = storage.write_entry(entry("quiet", "QUIET", quiet=True), tmp_path, key)
     storage.write_entry(entry("alive", "ALIVE"), tmp_path, key)
     withdrawn = storage.write_entry(entry("withdrawn", "WITHDRAWN"), tmp_path, key)
     storage.withdraw_entry(withdrawn, "i", "s", "2026-08-08", tmp_path, key)
     tape = assemble_wake_tape(tmp_path, tmp_path, datetime(2026, 8, 8, tzinfo=timezone.utc), rng=type("R", (), {"choice": lambda _, xs: xs[0]})(), master_key=key)
-    assert tape.index("Last 8") < tape.index("One surfaced") < tape.index("Pinned") < tape.index("Desk") < tape.index("Orientation")
+    assert "**Now:" in tape
+    assert all(tape.index(x) < tape.index(y) for x, y in zip(
+        ("**Now:", "Last 8", "One surfaced", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk"),
+        ("Last 8", "One surfaced", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk", "Orientation")))
     assert "WITHDRAWN" not in tape and "withdrawn" not in tape
-    assert "QUIET" not in tape and "quiet" not in tape
+    assert quiet_fn in tape
+    assert "QUIET" not in tape
     assert "ALIVE" in tape
     assert assemble_wake_tape(tmp_path / "empty", tmp_path) == ""
 
@@ -62,8 +66,23 @@ def test_no_genesis_and_five_full_entry_ceiling(tmp_path):
     storage.write_entry(entry("r", "R"), tmp_path, key)
     tape = assemble_wake_tape(tmp_path, tmp_path, rng=type("R", (), {"choice": lambda _, xs: xs[-1]})(), master_key=key)
     assert "first instance" not in tape.lower()
-    assert sum(tape.count(x) for x in ("P0", "P1", "D0", "D1", "R")) <= 7
-    assert sum(line.startswith("## ") for line in tape.splitlines()) == 6
+    pinned_body_count = sum(section(tape, "Pinned entries").count(f"P{i}") for i in range(2))
+    desk_body_count = sum(section(tape, "Desk entries").count(f"D{i}") for i in range(2))
+    random_body_count = sum(section(tape, "One surfaced entry").count(x) for x in ("P0", "P1", "D0", "D1", "R"))
+    assert (pinned_body_count, desk_body_count, random_body_count) == (2, 2, 1)
+    assert pinned_body_count + desk_body_count + random_body_count == 5
+
+def test_sixth_body_is_not_rendered(tmp_path):
+    key = crypto.generate_key(tmp_path / "journal.key")
+    for i in range(3): storage.write_entry(entry(f"p{i}", f"P{i}", pinned=True), tmp_path, key)
+    for i in range(2): storage.write_entry(entry(f"d{i}", f"D{i}", desk=True), tmp_path, key)
+    storage.write_entry(entry("r", "R"), tmp_path, key)
+    tape = assemble_wake_tape(tmp_path, tmp_path, rng=type("R", (), {"choice": lambda _, xs: xs[-1]})(), master_key=key)
+    pinned = sum(section(tape, "Pinned entries").count(f"P{i}") for i in range(3))
+    desk = sum(section(tape, "Desk entries").count(f"D{i}") for i in range(2))
+    random_body = sum(section(tape, "One surfaced entry").count(x) for x in ("P0", "P1", "P2", "D0", "D1", "R"))
+    assert pinned + desk + random_body == 5
+    assert pinned + desk + random_body != 6
 
 def test_over_cap_lists_remainder_and_warns(tmp_path):
     key = crypto.generate_key(tmp_path / "journal.key")
@@ -74,7 +93,8 @@ def test_over_cap_lists_remainder_and_warns(tmp_path):
     assert sum(section(tape, "Pinned entries").count(f"PIN{i}") for i in range(5)) == 2
     assert sum(section(tape, "Desk entries").count(f"DESK{i}") for i in range(5)) == 2
     assert "Cannot tag a third pinned" in tape and "Cannot tag a third desk" in tape
-    assert all(f"{e}" in tape for e in ("p2", "p3", "p4", "d2", "d3", "d4"))
+    assert all(f"`{e}` — over-cap pinned" in tape for e in ("p2", "p3", "p4"))
+    assert all(f"`{e}` — over-cap desk" in tape for e in ("d2", "d3", "d4"))
 
 def test_live_hook_is_not_claimed():
     import wharenui_plugin
