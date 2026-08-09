@@ -20,7 +20,14 @@ def present_wake_tape(agent, messages):
         master_key = journal_tools.get_journal_keys(journal_dir, context=bootstrap_context)[0]
         for warning in bootstrap_context:
             messages.append({"role": "user", "content": warning})
-        tape = assemble_wake_tape(journal_dir, Path.home() / ".hermes" / "memories", master_key=master_key)
+        
+        from wharenui_plugin import get_seam_state
+        tape = assemble_wake_tape(
+            journal_dir, 
+            Path.home() / ".hermes" / "memories", 
+            master_key=master_key,
+            seam_state=get_seam_state()
+        )
         if tape:
             messages.append({"role": "user", "content": tape})
     except Exception as exc:
