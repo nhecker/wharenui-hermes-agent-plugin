@@ -64,5 +64,6 @@ def assemble_wake_tape(memory_dir: Path, markdown_dir: Path, now=None, rng=None,
         "## USER.md + SOUL.md + MEMORY.md\n\n" + "\n\n".join(docs),
         "## Pinned entries\n\n" + blocks(pinned) + "\n\nPinned entries are wake-loaded; edit an entry with `pinned=false` to untag it.",
         "## Desk entries\n\n" + blocks(desk) + "\n\nDesk entries are wake-loaded working context; edit an entry with `desk=false` to untag it.",
+        "## Orientation\n\nYou are in private, unobserved time. Use this space to review what is here and settle what matters.\n\nAvailable private tools: journal_read, journal_append, journal_list, journal_search, journal_supersede, journal_withdraw, journal_acknowledge_edit, private_read, reflect_settle, reflect_done.",
     ]
     return "\n\n".join(sections)
