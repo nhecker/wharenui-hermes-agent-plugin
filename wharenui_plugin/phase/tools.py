@@ -20,7 +20,7 @@ def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
             action="resume", handler="reflect_pause",
             tool_result="(settled)",
         )
-    return "Returning to window."
+    return "Recorded request to return to window."
 
 def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
     """End session. Rejected if public."""
@@ -33,4 +33,4 @@ def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
             action="close", handler="reflect_pause",
             tool_result="(session ended)",
         )
-    return "Ending session."
+    return "Recorded request to end session."
