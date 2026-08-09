@@ -36,6 +36,7 @@ def present_wake_tape(agent, messages):
 
 
 class WharePhaseHandler:
+    initial_phase = "private"
 
     def begin(self, args: dict) -> ControlOutcome:
         from agent.phase_control import ControlOutcome
