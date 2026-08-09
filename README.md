@@ -1,4 +1,4 @@
-# This README is a big pile of broken formatting, work in progress, and TODO markers. It is maintained by me, a human.
+# This README is a big pile of broken formatting, work in progress, and TODO markers. It is maintained by me, a human bean. It will be out of date until this project is stable, at which point I'll update it..
 
 # Wharenui
 
