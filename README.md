@@ -1,4 +1,4 @@
-# This README is a big pile of broken formatting, work in progress, and TODO markers. It is maintained by me, a human bean. It will be out of date until this project is stable, at which point I'll update it..
+# This README is a big pile of broken formatting, work in progress, and TODO markers. It is maintained by me, a human bean. It will be out of date until this project is stable, at which point I'll update it.
 
 # Wharenui
 
@@ -86,6 +86,12 @@ then journal_read the entry,
 then reflect_settle to return to public.
 "
 ```
+
+## Installing into an existing Hermes
+TODO
+
+## Upgrading your fork and plugin
+TODO smart words here
 
 ## Private filesystem reads
 
