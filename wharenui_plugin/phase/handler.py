@@ -17,7 +17,8 @@ def present_wake_tape(agent, messages):
     try:
         journal_dir = journal_tools.get_journal_dir()
         bootstrap_context = []
-        master_key = journal_tools.get_journal_keys(journal_dir, context=bootstrap_context)[0]
+        master_key = journal_tools.get_journal_keys(journal_dir)[0]
+        journal_tools.verify_journal_signatures(journal_dir, context=bootstrap_context)
         for warning in bootstrap_context:
             messages.append({"role": "user", "content": warning})
         

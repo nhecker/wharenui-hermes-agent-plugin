@@ -98,7 +98,7 @@ def get_journal_dir() -> Path:
     return path
 
 
-def get_journal_keys(memory_dir: Path, context=None) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
+def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], Optional[Any]]:
     check_journal_safety(memory_dir)
     # Keep chmod scoped to the private Hermes tree; reject before any chmod.
     if memory_dir.name == "journal":
@@ -126,10 +126,14 @@ def get_journal_keys(memory_dir: Path, context=None) -> tuple[Optional[bytes], O
     if skey is None and memory_dir.exists():
         skey = sign.generate_signing_key(sig_file)
     vkey = skey.public_key() if skey else None
+    return mkey, skey, vkey
+
+
+def verify_journal_signatures(memory_dir: Path, context=None) -> None:
+    _, skey, vkey = get_journal_keys(memory_dir)
     if skey and vkey:
         hermes_root = memory_dir.parent
         sign.sign_directories((hermes_root / "SOUL.md", hermes_root / "memories"), skey, vkey, context=context)
-    return mkey, skey, vkey
 
 
 def filename_to_handle(filename: str) -> str:
