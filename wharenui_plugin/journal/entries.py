@@ -61,6 +61,9 @@ class Entry:
             raise ValueError(f"Unknown entry kind: {self.kind}")
 
 
+JournalEntry = Entry
+
+
 def make_tombstone(
     target: str,
     instance: str = "",

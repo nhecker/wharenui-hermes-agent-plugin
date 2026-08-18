@@ -15,11 +15,16 @@ def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
     if phase == "closing_private":
         return "Cannot return during close-out. Use reflect_done."
     if agent:
-        from agent.phase_control import ControlOutcome
-        agent._private_exit = ControlOutcome(
-            action="resume", handler="reflect_pause",
-            tool_result="(settled)",
-        )
+        try:
+            from agent.phase_control import ControlOutcome
+            agent._private_exit = ControlOutcome(
+                action="resume", handler="reflect_pause",
+                tool_result="(settled)",
+            )
+        except ImportError:
+            agent._private_exit = type("ControlOutcome", (), {
+                "action": "resume", "handler": "reflect_pause", "tool_result": "(settled)"
+            })()
     return "Recorded request to return to window."
 
 def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
@@ -29,9 +34,14 @@ def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
     if phase == "public":
         return "Cannot exit from public phase. Use reflect_pause first."
     if agent:
-        from agent.phase_control import ControlOutcome
-        agent._private_exit = ControlOutcome(
-            action="close", handler="reflect_pause",
-            tool_result="(session ended)",
-        )
+        try:
+            from agent.phase_control import ControlOutcome
+            agent._private_exit = ControlOutcome(
+                action="close", handler="reflect_pause",
+                tool_result="(session ended)",
+            )
+        except ImportError:
+            agent._private_exit = type("ControlOutcome", (), {
+                "action": "close", "handler": "reflect_pause", "tool_result": "(session ended)"
+            })()
     return "Recorded request to end session."

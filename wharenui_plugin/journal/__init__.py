@@ -4,7 +4,7 @@ A Hermes-agnostic journal with encrypted, signed, append-first entries.
 Supports reflection, reference, and tombstone entry kinds.
 """
 
-from .entries import Entry, make_tombstone, ENTRY_KINDS
+from .entries import Entry, make_tombstone, ENTRY_KINDS, JournalEntry
 from .storage import (
     write_entry,
     read_entry,
@@ -38,6 +38,7 @@ from .vectorstore import store, remove, get_hash, search
 
 __all__ = [
     "Entry",
+    "JournalEntry",
     "make_tombstone",
     "ENTRY_KINDS",
     "write_entry",
