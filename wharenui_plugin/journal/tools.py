@@ -125,6 +125,8 @@ def get_journal_keys(memory_dir: Path) -> tuple[Optional[bytes], Optional[Any], 
     skey = sign.load_signing_key(sig_file)
     if skey is None and memory_dir.exists():
         skey = sign.generate_signing_key(sig_file)
+        vkey = skey.public_key()
+        sign.sign_directories((memory_dir.parent / "SOUL.md", memory_dir.parent / "memories"), skey, vkey)
     vkey = skey.public_key() if skey else None
     return mkey, skey, vkey
 

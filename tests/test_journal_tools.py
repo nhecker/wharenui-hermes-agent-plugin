@@ -250,6 +250,7 @@ def test_open_notebook_registers_without_the_seam(tmp_path):
 
     lines = [
         "import sys, os",
+        "sys.modules['agent'] = None; sys.modules['agent.phase_control'] = None",
         "try:",
         "    import agent.phase_control",
         "    print('SEAM_IMPORTABLE: True'); sys.exit(1)",
@@ -311,6 +312,7 @@ def test_open_notebook_requires_explicit_opt_in():
     plugin_root = str(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     lines = [
         "import sys, os",
+        "sys.modules['agent'] = None; sys.modules['agent.phase_control'] = None",
         "os.environ.pop('WHARENUI_OPEN_NOTEBOOK', None)",
         "import wharenui_plugin",
         "class Ctx:",

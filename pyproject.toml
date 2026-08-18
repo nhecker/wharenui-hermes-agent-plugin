@@ -22,3 +22,5 @@ dev = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["wharenui_plugin"]
+[tool.pytest.ini_options]
+addopts = "--ignore=run_test.py"

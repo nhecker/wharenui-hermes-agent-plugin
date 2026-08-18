@@ -19,6 +19,7 @@ def test_prompt_absent():
     plugin_root = str(Path(__file__).resolve().parent.parent)
     lines = [
         "import sys, os",
+            "sys.modules['agent'] = None",
         f"sys.path.insert(0, {plugin_root!r})",
         "try:",
         "    import agent",

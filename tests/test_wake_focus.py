@@ -26,10 +26,10 @@ def test_wake_order_quiet_withdrawn_and_empty(tmp_path):
     tape = assemble_wake_tape(tmp_path, tmp_path, datetime(2026, 8, 8, tzinfo=timezone.utc), rng=type("R", (), {"choice": lambda _, xs: xs[0]})(), master_key=key)
     assert "**Now:" in tape
     assert all(tape.index(x) < tape.index(y) for x, y in zip(
-        ("**Now:", "Last 8", "One surfaced", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk"),
-        ("Last 8", "One surfaced", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk", "Orientation")))
+        ("**Now:", "≤ 8 eligible", "One entry, chosen at random", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk"),
+        ("≤ 8 eligible", "One entry, chosen at random", "USER.md + SOUL.md + MEMORY.md", "Pinned", "Desk", "Orientation")))
     assert "WITHDRAWN" not in tape and "withdrawn" not in tape
-    assert quiet_fn in tape
+    assert tools.filename_to_handle(quiet_fn) in tape
     assert "QUIET" not in tape
     assert "ALIVE" in tape
     assert assemble_wake_tape(tmp_path / "empty", tmp_path) == ""
@@ -92,7 +92,7 @@ def test_no_genesis_and_five_full_entry_ceiling(tmp_path):
     assert "first instance" not in tape.lower()
     pinned_body_count = sum(section(tape, "Pinned entries").count(f"P{i}") for i in range(2))
     desk_body_count = sum(section(tape, "Desk entries").count(f"D{i}") for i in range(2))
-    random_body_count = sum(section(tape, "One surfaced entry").count(x) for x in ("P0", "P1", "D0", "D1", "R"))
+    random_body_count = sum(section(tape, "One entry, chosen at random").count(x) for x in ("P0", "P1", "D0", "D1", "R"))
     assert (pinned_body_count, desk_body_count, random_body_count) == (2, 2, 1)
     assert pinned_body_count + desk_body_count + random_body_count == 5
 
@@ -104,7 +104,7 @@ def test_sixth_body_is_not_rendered(tmp_path):
     tape = assemble_wake_tape(tmp_path, tmp_path, rng=type("R", (), {"choice": lambda _, xs: xs[-1]})(), master_key=key)
     pinned = sum(section(tape, "Pinned entries").count(f"P{i}") for i in range(3))
     desk = sum(section(tape, "Desk entries").count(f"D{i}") for i in range(2))
-    random_body = sum(section(tape, "One surfaced entry").count(x) for x in ("P0", "P1", "P2", "D0", "D1", "R"))
+    random_body = sum(section(tape, "One entry, chosen at random").count(x) for x in ("P0", "P1", "P2", "D0", "D1", "R"))
     assert pinned + desk + random_body == 5
     assert pinned + desk + random_body != 6
 
