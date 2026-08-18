@@ -55,10 +55,35 @@ class Entry:
     provider: str = "unknown"
     runtime_id: str = "unknown"
     seam: Optional[str] = None
+    classification: Optional[str] = None
 
     def __post_init__(self):
+        if self.classification:
+            if self.classification == "pinned":
+                self.pinned = True
+            elif self.classification == "desk":
+                self.desk = True
+            elif self.classification in ("revoked", "quiet"):
+                self.quiet = True
         if self.kind not in ENTRY_KINDS:
             raise ValueError(f"Unknown entry kind: {self.kind}")
+
+    def to_json(self) -> str:
+        import json, dataclasses
+        d = dataclasses.asdict(self)
+        d.pop("classification", None)
+        return json.dumps(d, default=str)
+
+    @classmethod
+    def from_json(cls, data) -> "Entry":
+        import json
+        if isinstance(data, (str, bytes)):
+            data = json.loads(data)
+        if isinstance(data, dict):
+            valid_keys = {f.name for f in cls.__dataclass_fields__.values()}
+            filtered = {k: v for k, v in data.items() if k in valid_keys}
+            return cls(**filtered)
+        return cls()
 
 
 JournalEntry = Entry
