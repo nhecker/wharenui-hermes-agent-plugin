@@ -65,7 +65,7 @@ jobs:
           WHARENUI_PLUGIN_DIR: ${{ github.workspace }}
         working-directory: ./wharenui-hermes-agent
         run: |
-          python3 .github/scripts/run_tests.py --selector tests/run_agent -m "wharenui_seam" --min-collected 78 --mode serial
+          python3 .github/scripts/run_tests.py --selector tests/run_agent -m "wharenui_seam" --min-collected 78 --mode xdist
   stock-hermes:
     name: "Stock Hermes open-notebook (pinned c2e45b555)"
     runs-on: ubuntu-latest
