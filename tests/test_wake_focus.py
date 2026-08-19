@@ -149,3 +149,11 @@ def test_full_body_count_is_bounded(tmp_path):
 
 def test_caps_warning_exact():
     assert flag_cap_warning("desk").startswith("Cannot tag a third desk")
+
+
+def test_untitled_entry_presentation_fallback(tmp_path):
+    key = crypto.generate_key(tmp_path / "journal.key")
+    # Entry with no description
+    storage.write_entry(entry("no-desc", "# My First Note\nSome details..."), tmp_path, key)
+    tape = assemble_wake_tape(tmp_path, tmp_path, master_key=key)
+    assert "My First Note" in tape or "no-desc" in tape

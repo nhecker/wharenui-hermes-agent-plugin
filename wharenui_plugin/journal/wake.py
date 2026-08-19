@@ -33,9 +33,9 @@ def assemble_wake_tape(memory_dir: Path, markdown_dir: Path, now=None, rng=None,
     full = [e for e in eligible if not e.quiet and getattr(e, "filename", "") not in loaded]
     selected = rng.choice(full) if full else None
     listed = eligible[-8:][::-1]
+    from .tools import get_entry_title
     listing = "\n".join(
-        f"- `{filename_to_handle(e.filename)}` — {e.date or e.timestamp or 'undated'}"
-        + (f" — {e.description}" if e.description else "")
+        f"- `{filename_to_handle(e.filename)}` — {e.date or e.timestamp or 'undated'} — {get_entry_title(e)}"
         for e in listed
     )
     over_cap = []

@@ -169,11 +169,24 @@ def resolve_handle_to_filename(handle: str, memory_dir: Path) -> str:
     if (memory_dir / handle).exists() and handle.endswith(".md") and not handle.endswith(".sig"):
         return handle
 
-    for p in memory_dir.glob("*.md"):
-        if p.name.endswith(".sig"):
-            continue
+    md_files = [p for p in memory_dir.glob("*.md") if not p.name.endswith(".sig")]
+    for p in md_files:
         if filename_to_handle(p.name) == handle:
             return p.name
+
+    norm_handle = handle[2:] if handle.startswith("h_") else handle
+    matches = []
+    for p in md_files:
+        full_h = filename_to_handle(p.name)
+        norm_full_h = full_h[2:]
+        if full_h.startswith(handle) or norm_full_h.startswith(norm_handle) or p.name.startswith(handle):
+            matches.append(p.name)
+
+    if len(matches) == 1:
+        return matches[0]
+    elif len(matches) > 1:
+        raise ValueError(f"Ambiguous entry handle prefix '{handle}' matches multiple entries: {matches}")
+
     raise FileNotFoundError(f"Entry handle not found: {handle}")
 
 
@@ -201,10 +214,25 @@ def extract_provenance(agent: Any = None) -> dict:
     return prov
 
 
+def get_entry_title(e: Any) -> str:
+    if getattr(e, "description", None) and str(e.description).strip():
+        return str(e.description).strip()
+    if getattr(e, "title", None) and str(e.title).strip():
+        return str(e.title).strip()
+    if getattr(e, "slug", None) and str(e.slug).strip():
+        return str(e.slug).strip()
+    if getattr(e, "content", None):
+        for line in str(e.content).splitlines():
+            clean = line.lstrip("#").strip()
+            if clean:
+                return clean[:60] + ("..." if len(clean) > 60 else "")
+    return "(untitled)"
+
+
 def _assert_private_phase(agent: Any = None):
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
-        raise PermissionError("Journal tools are private-only and cannot be executed in public phase.")
+        raise PermissionError("Journal tools are private-only and cannot be executed in public phase. Use 'reflect_pause' (or '/pause') to pause public conversation and enter private phase.")
 
 
 
@@ -356,14 +384,17 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
     entries = storage.list_entries(memory_dir, master_key=mkey)
     results = []
     for entry in entries:
-        if tag_filter and tag_filter not in entry.tags:
+        tags = getattr(entry, "tags", []) or []
+        if tag_filter and tag_filter not in tags:
             continue
         # MUST return opaque handles only — NEVER decrypted slug, description, summary, or body!
         results.append({
             "handle": filename_to_handle(getattr(entry, "filename", entry.slug)),
-            "kind": entry.kind,
-            "timestamp": entry.timestamp,
-            "pinned": entry.pinned,
+            "kind": getattr(entry, "kind", "reflection"),
+            "timestamp": getattr(entry, "timestamp", ""),
+            "pinned": getattr(entry, "pinned", False),
+            "desk": getattr(entry, "desk", False),
+            "tags": tags,
         })
     return json.dumps(results)
 

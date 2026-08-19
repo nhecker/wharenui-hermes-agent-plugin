@@ -408,3 +408,46 @@ def test_acknowledge_edit_is_private_and_re_signs(tmp_path):
 
     target.write_text("tampered-again", encoding="utf-8")
     assert sign.verify_entry(target, key.public_key()) is False
+
+
+def test_public_phase_refusal_is_actionable(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    pub_agent = FakeAgent(_phase="public")
+    with pytest.raises(PermissionError) as exc_info:
+        jtools.handle_journal_append({"content": "test"}, agent=pub_agent)
+    assert "reflect_pause" in str(exc_info.value) or "/pause" in str(exc_info.value)
+
+
+def test_handle_prefix_resolution_unique_and_ambiguous(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    res1 = json.loads(jtools.handle_journal_append({"content": "entry 1"}, agent=agent))
+    res2 = json.loads(jtools.handle_journal_append({"content": "entry 2"}, agent=agent))
+    h1, h2 = res1["handle"], res2["handle"]
+    memory_dir = jtools.get_journal_dir()
+    
+    # Full handle resolves
+    assert jtools.resolve_handle_to_filename(h1, memory_dir) == res1["filename"]
+    # Prefix resolves if unambiguous
+    prefix1 = h1[:6]
+    if prefix1 != h2[:6]:
+        assert jtools.resolve_handle_to_filename(prefix1, memory_dir) == res1["filename"]
+    
+    # Short prefix matching both raises ValueError
+    common_prefix = "h_"
+    with pytest.raises(ValueError, match="Ambiguous entry handle prefix"):
+        jtools.resolve_handle_to_filename(common_prefix, memory_dir)
+
+
+def test_journal_list_tag_filtering(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    jtools.handle_journal_append({"content": "e1", "tags": ["alpha", "beta"]}, agent=agent)
+    jtools.handle_journal_append({"content": "e2", "tags": ["beta", "gamma"]}, agent=agent)
+    
+    alpha = json.loads(jtools.handle_journal_list({"tag": "alpha"}, agent=agent))
+    assert len(alpha) == 1
+    beta = json.loads(jtools.handle_journal_list({"tag": "beta"}, agent=agent))
+    assert len(beta) == 2
+    gamma = json.loads(jtools.handle_journal_list({"tag": "gamma"}, agent=agent))
+    assert len(gamma) == 1
