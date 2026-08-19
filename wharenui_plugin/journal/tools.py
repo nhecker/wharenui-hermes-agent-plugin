@@ -166,20 +166,31 @@ def _resolve_seam_value() -> str:
 def resolve_handle_to_filename(handle: str, memory_dir: Path) -> str:
     if not memory_dir.exists():
         raise FileNotFoundError(f"Entry handle not found: {handle}")
-    if (memory_dir / handle).exists() and handle.endswith(".md") and not handle.endswith(".sig"):
-        return handle
+    
+    if not isinstance(handle, str):
+        raise ValueError(f"Entry handle must be a string, got {type(handle)}")
+
+    clean_handle = handle.strip().lower()
+    if not clean_handle or clean_handle == "h_":
+        raise ValueError(f"Invalid or empty entry handle: '{handle}'")
+
+    if (memory_dir / clean_handle).exists() and clean_handle.endswith(".md") and not clean_handle.endswith(".sig"):
+        return clean_handle
 
     md_files = [p for p in memory_dir.glob("*.md") if not p.name.endswith(".sig")]
     for p in md_files:
-        if filename_to_handle(p.name) == handle:
+        if filename_to_handle(p.name).lower() == clean_handle:
             return p.name
 
-    norm_handle = handle[2:] if handle.startswith("h_") else handle
+    norm_handle = clean_handle[2:] if clean_handle.startswith("h_") else clean_handle
+    if len(norm_handle) < 2:
+        raise ValueError(f"Handle prefix '{handle}' is too short; minimum 2 hex characters required")
+
     matches = []
     for p in md_files:
-        full_h = filename_to_handle(p.name)
+        full_h = filename_to_handle(p.name).lower()
         norm_full_h = full_h[2:]
-        if full_h.startswith(handle) or norm_full_h.startswith(norm_handle) or p.name.startswith(handle):
+        if full_h.startswith(clean_handle) or norm_full_h.startswith(norm_handle) or p.name.lower().startswith(clean_handle):
             matches.append(p.name)
 
     if len(matches) == 1:
@@ -188,7 +199,6 @@ def resolve_handle_to_filename(handle: str, memory_dir: Path) -> str:
         raise ValueError(f"Ambiguous entry handle prefix '{handle}' matches multiple entries: {matches}")
 
     raise FileNotFoundError(f"Entry handle not found: {handle}")
-
 
 def extract_provenance(agent: Any = None) -> dict:
     prov = {
@@ -215,19 +225,20 @@ def extract_provenance(agent: Any = None) -> dict:
 
 
 def get_entry_title(e: Any) -> str:
-    if getattr(e, "description", None) and str(e.description).strip():
-        return str(e.description).strip()
-    if getattr(e, "title", None) and str(e.title).strip():
-        return str(e.title).strip()
-    if getattr(e, "slug", None) and str(e.slug).strip():
-        return str(e.slug).strip()
+    for attr in ("description", "title", "slug"):
+        val = getattr(e, attr, None)
+        if val is not None and isinstance(val, str) and val.strip():
+            return val.strip()
     if getattr(e, "content", None):
-        for line in str(e.content).splitlines():
-            clean = line.lstrip("#").strip()
+        content_str = str(e.content)
+        for line in content_str.splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("<!--") or stripped.startswith("---"):
+                continue
+            clean = stripped.lstrip("#").strip()
             if clean:
-                return clean[:60] + ("..." if len(clean) > 60 else "")
+                return clean[:57] + "..." if len(clean) > 60 else clean
     return "(untitled)"
-
 
 def _assert_private_phase(agent: Any = None):
     phase = getattr(agent, "_phase", "public") if agent else "public"
@@ -385,11 +396,16 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
     results = []
     for entry in entries:
         tags = getattr(entry, "tags", []) or []
-        if tag_filter and tag_filter not in tags:
-            continue
+        if tag_filter:
+            if isinstance(tag_filter, list):
+                if not any(t in tags for t in tag_filter):
+                    continue
+            elif tag_filter not in tags:
+                continue
         # MUST return opaque handles only — NEVER decrypted slug, description, summary, or body!
+        fn = getattr(entry, "filename", None) or getattr(entry, "slug", "") or ""
         results.append({
-            "handle": filename_to_handle(getattr(entry, "filename", entry.slug)),
+            "handle": filename_to_handle(fn),
             "kind": getattr(entry, "kind", "reflection"),
             "timestamp": getattr(entry, "timestamp", ""),
             "pinned": getattr(entry, "pinned", False),
@@ -397,7 +413,6 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
             "tags": tags,
         })
     return json.dumps(results)
-
 
 def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
     args, agent = _resolve_args_and_agent(args, agent, kwargs, "query")
