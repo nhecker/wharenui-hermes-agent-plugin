@@ -10,6 +10,19 @@ from ..journal import tools as journal_tools
 log = logging.getLogger("wharenui_plugin.phase.handler")
 MAX_PRIVATE_TURNS = 15
 
+def _get_control_outcome_cls():
+    try:
+        from agent.phase_control import ControlOutcome
+        return ControlOutcome
+    except ImportError:
+        class ControlOutcome:
+            def __init__(self, action: str, handler: str, tool_result: str, payload: dict | None = None):
+                self.action = action
+                self.handler = handler
+                self.tool_result = tool_result
+                self.payload = payload or {}
+        return ControlOutcome
+
 def present_wake_tape(agent, messages):
     """Present the wake tape once per agent instance."""
     if getattr(agent, "_wharenui_wake_tape_presented", False):
@@ -38,9 +51,8 @@ def present_wake_tape(agent, messages):
 
 class WharePhaseHandler:
 
-    def begin(self, args: dict) -> ControlOutcome:
-        from agent.phase_control import ControlOutcome
-
+    def begin(self, args: dict):
+        ControlOutcome = _get_control_outcome_cls()
         return ControlOutcome(
             action="enter", handler="reflect_pause",
             tool_result="reflecting...",
@@ -48,7 +60,7 @@ class WharePhaseHandler:
 
     def run(self, agent, messages, effective_task_id):
         """Bounded private loop via run_subturn."""
-        from agent.phase_control import ControlOutcome
+        ControlOutcome = _get_control_outcome_cls()
 
         present_wake_tape(agent, messages)
         task_id = effective_task_id or "private"
