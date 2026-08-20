@@ -23,17 +23,17 @@ def get_seam_state() -> str:
 
 _PAUSE_SCHEMA = {
     "name": "reflect_pause",
-    "description": "Pause the public window and enter private time.",
+    "description": "Request pausing the public window to enter private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 _SETTLE_SCHEMA = {
     "name": "reflect_settle",
-    "description": "Return to the public window from private time.",
+    "description": "Request returning to the public window from private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 _DONE_SCHEMA = {
     "name": "reflect_done",
-    "description": "End the session from private/closing-private time.",
+    "description": "Request ending the session from private or closing-private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
 
@@ -46,7 +46,26 @@ _JOURNAL_APPEND_SCHEMA = {
             "content": {"type": "string", "description": "Markdown content body"},
             "slug": {"type": "string", "description": "Short identifier slug"},
             "description": {"type": "string", "description": "One-line summary"},
-            "kind": {"type": "string", "description": "reflection | reference"},
+            "kind": {
+                "type": "string",
+                "enum": [
+                    "thought",
+                    "memory",
+                    "note",
+                    "reflection",
+                    "observation",
+                    "decision",
+                    "plan",
+                    "draft",
+                    "task",
+                    "question",
+                    "finding",
+                    "summary",
+                    "log",
+                    "custom",
+                ],
+                "description": "Entry kind",
+            },
             "tags": {"type": "array", "items": {"type": "string"}},
             "moves": {"type": "array", "items": {"type": "string"}},
             "pinned": {"type": "boolean"},
