@@ -50,6 +50,7 @@ def present_wake_tape(agent, messages):
 
 
 class WharePhaseHandler:
+    initial_phase = "private"
 
     def begin(self, args: dict):
         ControlOutcome = _get_control_outcome_cls()
@@ -73,6 +74,11 @@ class WharePhaseHandler:
         prompt = get_private_prompt(get_seam_state())
         messages.append({"role": "user", "content": prompt})
         for turn_i in range(MAX_PRIVATE_TURNS):
+            if turn_i == MAX_PRIVATE_TURNS - 1:
+                messages.append({
+                    "role": "user",
+                    "content": "[Notice: 1 private turn remaining before returning to the public window.]",
+                })
             result = agent.run_subturn(
                 messages, tool_names=private_tool_names,
                 task_id=f"{task_id}:t{turn_i}",

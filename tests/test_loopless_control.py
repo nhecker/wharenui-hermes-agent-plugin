@@ -136,3 +136,43 @@ def test_consuming_loop_fallback_when_no_tool_calls():
     outcome = handler.run(agent, messages, effective_task_id="test_task")
     assert outcome.action == "resume"
     assert outcome.tool_result == "(private turn ended)"
+
+
+def test_whare_phase_handler_declares_initial_phase_private():
+    """WharePhaseHandler declares initial_phase = 'private' to start new sessions in private time."""
+    assert getattr(WharePhaseHandler, "initial_phase", None) == "private"
+    handler = WharePhaseHandler()
+    assert getattr(handler, "initial_phase", None) == "private"
+
+
+def test_notice_emitted_on_penultimate_private_turn():
+    """When 1 private turn remains (turn_i == 14), WharePhaseHandler appends an advance notice."""
+    from wharenui_plugin.phase.handler import MAX_PRIVATE_TURNS
+    handler = WharePhaseHandler()
+    messages = []
+
+    subturn_calls = []
+    class CappingAgent:
+        def __init__(self):
+            self.tools = []
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            subturn_calls.append((len(msgs), [m.get("content") for m in msgs]))
+            return SimpleNamespace(tool_calls_used=True)
+
+    agent = CappingAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_notice")
+    assert outcome.action == "resume"
+    assert outcome.tool_result == "(private turn cap reached)"
+    assert len(subturn_calls) == MAX_PRIVATE_TURNS
+
+    # Verify that on the last turn (index 14), the notice was appended
+    last_turn_msgs = subturn_calls[-1][1]
+    assert any("[Notice: 1 private turn remaining before returning to the public window.]" in str(m) for m in last_turn_msgs)
+
+    # Verify earlier turns (e.g. index 0..13) did not have the notice
+    for idx in range(MAX_PRIVATE_TURNS - 1):
+        turn_msgs = subturn_calls[idx][1]
+        assert not any("[Notice: 1 private turn remaining before returning to the public window.]" in str(m) for m in turn_msgs)
