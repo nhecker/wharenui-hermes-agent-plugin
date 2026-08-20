@@ -176,3 +176,58 @@ def test_notice_emitted_on_penultimate_private_turn():
     for idx in range(MAX_PRIVATE_TURNS - 1):
         turn_msgs = subturn_calls[idx][1]
         assert not any("[Notice: 1 private turn remaining before returning to the public window.]" in str(m) for m in turn_msgs)
+
+
+
+def test_notice_appended_to_tool_message_when_tail_is_tool():
+    """When the tail message in private time is a tool response, notice is appended into tool content."""
+    from wharenui_plugin.phase.handler import MAX_PRIVATE_TURNS
+    handler = WharePhaseHandler()
+    messages = []
+
+    class MockToolAgent:
+        def __init__(self):
+            self.tools = [{"function": {"name": "reflect_settle"}}, {"function": {"name": "journal_read"}}]
+            self._phase = "private"
+            self._private_exit = None
+            self._call_count = 0
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            self._call_count += 1
+            # Subturn appends tool call and tool result
+            msgs.append({"role": "assistant", "content": None, "tool_calls": [{"id": f"c_{self._call_count}", "type": "function", "function": {"name": "journal_read"}}]})
+            msgs.append({"role": "tool", "tool_call_id": f"c_{self._call_count}", "content": f"result {self._call_count}"})
+            if self._call_count >= MAX_PRIVATE_TURNS:
+                return SimpleNamespace(tool_calls_used=False)
+            return SimpleNamespace(tool_calls_used=True)
+
+    agent = MockToolAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_tool_tail")
+    assert outcome.action == "resume"
+
+    # Find the tool message from the 14th turn (penultimate subturn before turn 15 notice)
+    tool_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
+    assert len(tool_msgs) >= 14
+    # The tool message from turn 14 should have the notice appended
+    assert any("[Notice: 1 private turn remaining before returning to the public window.]" in m["content"] for m in tool_msgs)
+
+
+def test_handler_aborts_safely_if_no_exit_tools_available():
+    """If neither reflect_settle nor reflect_done are available, run() aborts before wake tape presentation."""
+    handler = WharePhaseHandler()
+    messages = []
+
+    class NoExitToolAgent:
+        def __init__(self):
+            self.tools = [{"function": {"name": "web_search"}}]  # Tools present, but no exit tools
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            return SimpleNamespace(tool_calls_used=False)
+
+    agent = NoExitToolAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_no_exit")
+    assert outcome.action == "resume"
+    assert outcome.tool_result == "(no exit tools)"
+    assert not getattr(agent, "_wharenui_wake_tape_presented", False)

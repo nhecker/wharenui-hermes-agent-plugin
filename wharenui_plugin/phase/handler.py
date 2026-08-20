@@ -63,22 +63,37 @@ class WharePhaseHandler:
         """Bounded private loop via run_subturn."""
         ControlOutcome = _get_control_outcome_cls()
 
-        present_wake_tape(agent, messages)
         task_id = effective_task_id or "private"
         private_tool_set = private_tools(getattr(agent, "tools", []) or [])
         private_tool_names = {
             (t.get("function", {}) or {}).get("name")
             for t in private_tool_set
         }
+
+        all_agent_tools = getattr(agent, "tools", None)
+        if all_agent_tools:
+            if "reflect_settle" not in private_tool_names and "reflect_done" not in private_tool_names:
+                log.warning("No exit tools available in private toolset; aborting private run safely")
+                return ControlOutcome(
+                    action="resume", handler="reflect_pause",
+                    tool_result="(no exit tools)",
+                )
+        else:
+            from ..phase.toolset import PRIVATE_ALLOWLIST
+            private_tool_names = set(PRIVATE_ALLOWLIST)
+
+        present_wake_tape(agent, messages)
+
         from wharenui_plugin import get_seam_state
         prompt = get_private_prompt(get_seam_state())
         messages.append({"role": "user", "content": prompt})
         for turn_i in range(MAX_PRIVATE_TURNS):
             if turn_i == MAX_PRIVATE_TURNS - 1:
-                messages.append({
-                    "role": "user",
-                    "content": "[Notice: 1 private turn remaining before returning to the public window.]",
-                })
+                notice = "[Notice: 1 private turn remaining before returning to the public window.]"
+                if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "tool":
+                    messages[-1]["content"] = f"{messages[-1].get('content', '')}\n\n{notice}"
+                else:
+                    messages.append({"role": "user", "content": notice})
             result = agent.run_subturn(
                 messages, tool_names=private_tool_names,
                 task_id=f"{task_id}:t{turn_i}",
