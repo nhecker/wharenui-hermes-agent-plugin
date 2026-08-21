@@ -70,20 +70,82 @@ export WHARENUI_PLUGIN_DIR="$(pwd)"
 
 ---
 
-## 3. Upgrade & Sync Workflow
+## 3. Upgrade & Maintenance Workflows
 
-### Upgrading the Fork against Upstream Hermes
-The fork maintains clean separation from upstream by concentrating all Wharenui seams inside:
+### 3.1. Operator Upgrade Guide: Pulling Existing Installations Forward
+If you have an existing Hermes installation where `wharenui-hermes-agent` and `wharenui-hermes-agent-plugin` are already running, follow these steps to pull both repositories forward to the latest releases:
+
+#### Step 1: Pull Latest Commits for Both Repositories
+```bash
+# Update the Hermes fork
+cd /path/to/wharenui-hermes-agent
+git fetch origin
+git checkout wharenui-integration
+git pull origin wharenui-integration
+
+# Update the Wharenui plugin
+cd /path/to/wharenui-hermes-agent-plugin
+git fetch origin
+git checkout main
+git pull origin main
+```
+
+#### Step 2: Refresh Editable Python Packages & Dependencies
+If using a virtual environment (recommended):
+```bash
+# Activate your active Hermes venv
+source /path/to/venv/bin/activate
+pip install --upgrade pip
+pip install -e /path/to/wharenui-hermes-agent-plugin
+pip install -e /path/to/wharenui-hermes-agent
+```
+
+*Note for system-wide installs on Debian/Ubuntu (PEP 668)*: If you are maintaining a system or user-wide installation without a venv, pass `--break-system-packages`:
+```bash
+pip install --break-system-packages -e /path/to/wharenui-hermes-agent-plugin
+pip install --break-system-packages -e /path/to/wharenui-hermes-agent
+```
+
+#### Step 3: Verify Filesystem & Key Permissions
+Ensure permission hardening invariants are preserved after updates:
+```bash
+# Journal directory must be 0700
+chmod 700 ~/.hermes/journal/
+
+# Master encryption and signing keys must be 0600
+chmod 600 ~/.hermes/journal/journal.key ~/.hermes/journal/signing.key 2>/dev/null || true
+
+# Detached memory signatures must be 0600
+chmod 600 ~/.hermes/memories/*.sig 2>/dev/null || true
+```
+
+#### Step 4: Run Smoke Checks & Verification
+Verify that the upgraded Hermes CLI and Wharenui plugin handshake successfully:
+```bash
+# 1. Verify CLI launch & version
+hermes --help
+
+# 2. Verify agent initialization and private phase seam discovery
+python3 -c "from run_agent import AIAgent; a = AIAgent(); print('Initial phase:', a._initial_phase); assert a._initial_phase == 'private'; print('✓ Upgrade verified successfully')"
+
+# 3. (Optional) Run the seam test gate
+python3 /path/to/wharenui-hermes-agent/.github/scripts/run_tests.py --selector tests/run_agent -m wharenui_seam --mode xdist
+```
+
+---
+
+### 3.2. Upgrading the Fork against Upstream Hermes (`NousResearch/hermes-agent`)
+The fork concentrates all Wharenui seams inside:
 - `agent/phase_control.py` (Protocol definitions)
 - `agent/conversation_loop.py` (phase transition & initial phase execution)
 - `agent/agent_init.py` (generic discovery & liveness guard)
 - `run_agent.py` (SessionDB persistence filter `_phase_private`)
 - `model_tools.py` (hook emission phase-gating)
 
-To sync with upstream:
+To sync with upstream manually:
 ```bash
-cd wharenui-hermes-agent
-git remote add upstream https://github.com/NousResearch/hermes-agent.git
+cd /path/to/wharenui-hermes-agent
+git remote add upstream https://github.com/NousResearch/hermes-agent.git 2>/dev/null || true
 git fetch upstream main
 git merge upstream/main
 
@@ -91,7 +153,11 @@ git merge upstream/main
 python3 .github/scripts/run_tests.py --selector tests/run_agent -m wharenui_seam --mode xdist
 ```
 
-### Upgrading the Plugin
+*Automated Sync Proposals*: The fork includes an automated proposal pipeline (`.github/scripts/propose_upstream_sync.py` and `.github/workflows/propose-upstream-sync.yml`) that runs weekly to validate upstream catch-ups against the Tier 2 baseline and open reviewable pull requests with a zero auto-merge policy.
+
+---
+
+### 3.3. Automatic Plugin Data Migrations
 The plugin contains built-in idempotent migration logic:
 * **Tombstone Migrations**: Legacy frontmatter tombstones (`tombstone: true`) are automatically and lazily migrated to filename suffix tombstones (`.tomb`) on first read, preserving decryptability without modifying content bodies.
 * **Key Derivation Compatibility**: Master keys (V1 32-byte Fernet tokens) and derived per-entry context keys seamlessly coexist.
