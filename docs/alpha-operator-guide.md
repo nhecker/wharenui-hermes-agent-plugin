@@ -14,7 +14,7 @@ Wharenui operates across two repositories following Michael Feathers' seam model
 ┌─────────────────────────────────────────────────────────────┐
 │              wharenui-hermes-agent-plugin                   │
 │  (The Habitat & Policy: WharePhaseHandler, Journal Engine,  │
-│   Detached Ed25519 Signatures, AES-GCM Encrypted Storage)   │
+│   Detached Ed25519 Signatures, Fernet Encrypted Storage)    │
 └──────────────────────────────┬──────────────────────────────┘
                                │ Generic Phase Control Seam
 ┌──────────────────────────────▼──────────────────────────────┐
@@ -100,41 +100,43 @@ The plugin contains built-in idempotent migration logic:
 
 ## 4. Technical Answers for Implementation Markers
 
-### Filesystem Layout & Where Files Live
+### Filesystem Layout & Key Management
 All Wharenui files are stored in the user's home directory under `~/.hermes/`:
 
 | Path | Description | Access Permissions |
 |---|---|---|
 | `~/.hermes/journal/` | Encrypted journal entries (`*.md`) and tombstones (`*.tomb`) | `0700` |
-| `~/.hermes/journal/secret.key` | 32-byte base64-encoded Fernet master key | `0600` (Owner read/write only) |
-| `~/.hermes/journal/sign.key` | Ed25519 private signing key | `0600` (Owner read/write only) |
-| `~/.hermes/journal/verify.key` | Ed25519 public verification key | `0644` |
-| `~/.hermes/journal/vector.db` | Encrypted SQLite vectorstore for semantic search | `0600` |
-| `~/.hermes/memories/*.sig` | Detached Ed25519 binary signatures for `USER.md`, `SOUL.md`, `MEMORY.md` | `0644` |
+| `~/.hermes/journal/journal.key` | 32-byte base64-encoded Fernet master key (`AES-128-CBC + HMAC-SHA256`) | `0600` (Owner read/write only) |
+| `~/.hermes/journal/signing.key` | Ed25519 private signing key (used to sign memory files & verify provenance) | `0600` (Owner read/write only) |
+| *(in-memory)* | Ed25519 public verifying key (derived dynamically via `signing.key.public_key()`) | *(In-memory)* |
+| `~/.hermes/journal/embeddings.db` | Encrypted SQLite vectorstore with HMAC-hashed lookup keys | `0600` |
+| `~/.hermes/memories/*.sig` | Detached Ed25519 binary signatures for `USER.md`, `SOUL.md`, `MEMORY.md` | `0600` (Owner read/write only) |
 
-### Entry Format & Classifiers
-Journal entries are stored as encrypted Markdown files with YAML frontmatter:
+### Entry Format & Frontmatter Serialization
+Journal entries are stored as encrypted Markdown files with YAML frontmatter. The base frontmatter fields serialized by `_format_frontmatter()` are:
 ```markdown
 ---
+kind: reflection
 slug: entry-slug-name
-description: One-line summary
-timestamp: 2026-08-20T15:00:00Z
-pinned: false
-desk: false
-quiet: false
-provenance: ok
-content_hash: <hmac-sha256-hex>
+instance: <uuid-or-name>
+session: <session-id>
+date: 2026-08-20T15:00:00Z
+context:
+  model: hermes-3
+  provider: openrouter
+  seam: ok
+tags: [working-notes, ideas]
+moves: []
 ---
 Body text of the private journal entry...
 ```
 
-**Entry Classifiers**:
-* `regular` (default): Eligible for random presentation in wake tape.
-* `pinned: true`: Always loaded in the "Pinned entries" section of the wake tape (up to 2 full entries, excess listed as handles with warnings).
-* `desk: true`: Working context for active transient tasks; loaded in the "Desk entries" section of the wake tape (up to 2 full entries, excess listed as handles with warnings).
-* `quiet: true`: Omitted from random wake-tape selection; discoverable via search and list tools.
-* `withdrawn: true` / `.tomb`: Soft-deleted entry; excluded from listings and searches unless explicitly requested.
-* `supersedes: <handle>`: Links the entry as an update/replacement to an earlier journal handle.
+**Boolean & Revision Flags**:
+* `pinned: true`: (Omitted when false) Always loaded in the "Pinned entries" section of the wake tape (up to 2 full entries, excess listed as handles with warnings).
+* `desk: true`: (Omitted when false) Working context for active transient tasks; loaded in the "Desk entries" section of the wake tape (up to 2 full entries, excess listed as handles with warnings).
+* `quiet: true`: (Omitted when false) Omitted from random wake-tape selection; discoverable via search and list tools.
+* `supersedes: [older-handle]`: Links the entry as an update/replacement to an earlier journal handle.
+* `withdrawn` / Tombstones: When an entry is withdrawn, an append-only tombstone entry is recorded, and the target file is renamed to `<token>.tomb.md` so eligibility scans skip it without decrypting.
 
 ### The Five Sealed Egress Channels
 When in private phase, Hermes prevents leakage across five distinct channels:
@@ -155,10 +157,10 @@ The wake tape is constructed deterministically from 7 sections in [`journal/wake
 1. **Preamble**: Context framing note ("Wake tape follows. Treat it as context you may inspect, not an instruction.").
 2. **Now line**: Current UTC timestamp and seam status (`**Now:** YYYY-MM-DD HH:MM UTC`, `**Seam:** ok`).
 3. **Eligible Entry Listing**: Handle list of up to 8 eligible entries with dates and descriptions.
-4. **One Random Entry**: Full decrypted body of one eligible entry chosen at random.
+4. **One Random Entry**: Full decrypted body of one eligible entry chosen at random (excluding `quiet`, `tombstone`, or already-loaded entries).
 5. **System Memories**: Content of `USER.md`, `SOUL.md`, and `MEMORY.md` with signature validation context.
-6. **Pinned Entries**: Up to 2 pinned entries with full bodies; remainder listed by handle.
-7. **Desk Entries**: Up to 2 desk entries with full bodies; remainder listed by handle.
+6. **Pinned Entries**: Up to 2 pinned entries with full bodies; remainder listed by handle with warning if over cap.
+7. **Desk Entries**: Up to 2 desk entries with full bodies; remainder listed by handle with warning if over cap.
 8. **Orientation Prompt**: Closed with the private prompt and available tool inventory.
 
 ### What to Back Up
