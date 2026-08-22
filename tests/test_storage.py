@@ -266,7 +266,8 @@ def test_encrypted_file_is_not_readable_as_plaintext(journal_dir, master_key):
     entry = _make_entry(slug="opaque", content="You should not see this.", date="2026-04-05")
     filename = storage.write_entry(entry, journal_dir, master_key)
     raw = (journal_dir / filename).read_bytes()
-    assert b"---" not in raw
+    assert not raw.startswith(b"---")
+    assert b"kind: reflection" not in raw
     assert b"You should not see this" not in raw
     assert crypto.is_encrypted(raw)
 
