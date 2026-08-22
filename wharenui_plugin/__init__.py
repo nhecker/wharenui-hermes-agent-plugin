@@ -21,18 +21,18 @@ def get_seam_state() -> str:
     return state
 
 
-_PAUSE_SCHEMA = {
-    "name": "reflect_pause",
+_ENTER_PRIVATE_SCHEMA = {
+    "name": "enter_private",
     "description": "Request pausing the public window to enter private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
-_SETTLE_SCHEMA = {
-    "name": "reflect_settle",
+_EXIT_PRIVATE_SCHEMA = {
+    "name": "exit_private",
     "description": "Request returning to the public window from private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
-_DONE_SCHEMA = {
-    "name": "reflect_done",
+_END_SESSION_SCHEMA = {
+    "name": "end_session",
     "description": "Request ending the session from private or closing-private time.",
     "parameters": {"type": "object", "properties": {}, "required": []},
 }
@@ -163,13 +163,13 @@ _JOURNAL_WITHDRAW_SCHEMA = {
 
 def register(ctx):
     import copy
-    global _PAUSE_SCHEMA, _SETTLE_SCHEMA, _DONE_SCHEMA
+    global _ENTER_PRIVATE_SCHEMA, _EXIT_PRIVATE_SCHEMA, _END_SESSION_SCHEMA
     global _JOURNAL_APPEND_SCHEMA, _JOURNAL_READ_SCHEMA, _JOURNAL_LIST_SCHEMA
     global _JOURNAL_SEARCH_SCHEMA, _JOURNAL_SUPERSEDE_SCHEMA, _JOURNAL_WITHDRAW_SCHEMA
 
-    pause_schema = copy.deepcopy(_PAUSE_SCHEMA)
-    settle_schema = copy.deepcopy(_SETTLE_SCHEMA)
-    done_schema = copy.deepcopy(_DONE_SCHEMA)
+    enter_private_schema = copy.deepcopy(_ENTER_PRIVATE_SCHEMA)
+    exit_private_schema = copy.deepcopy(_EXIT_PRIVATE_SCHEMA)
+    end_session_schema = copy.deepcopy(_END_SESSION_SCHEMA)
     journal_append_schema = copy.deepcopy(_JOURNAL_APPEND_SCHEMA)
     journal_read_schema = copy.deepcopy(_JOURNAL_READ_SCHEMA)
     journal_list_schema = copy.deepcopy(_JOURNAL_LIST_SCHEMA)
@@ -197,19 +197,19 @@ def register(ctx):
         if os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").strip().lower() in ("true", "1", "yes", "on"):
             log.info("WHARENUI_OPEN_NOTEBOOK is set but seam is present — ignored, using seam")
         from .phase.handler import WharePhaseHandler
-        from .phase.tools import handle_reflect_settle, handle_reflect_done
+        from .phase.tools import handle_exit_private, handle_end_session
         handler = WharePhaseHandler()
         ctx.register_control_tool(
-            name="reflect_pause", toolset="wharenui",
-            schema=pause_schema,
+            name="enter_private", toolset="wharenui",
+            schema=enter_private_schema,
             handler=lambda tool_args, **kw: handler.begin(tool_args),
             phase_handler=handler,
         )
-        log.info("reflect_pause registered as control tool")
-        ctx.register_tool(name="reflect_settle", toolset="wharenui",
-                          schema=settle_schema, handler=handle_reflect_settle)
-        ctx.register_tool(name="reflect_done", toolset="wharenui",
-                          schema=done_schema, handler=handle_reflect_done)
+        log.info("enter_private registered as control tool")
+        ctx.register_tool(name="exit_private", toolset="wharenui",
+                          schema=exit_private_schema, handler=handle_exit_private)
+        ctx.register_tool(name="end_session", toolset="wharenui",
+                          schema=end_session_schema, handler=handle_end_session)
     else:
         _opt_in = os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").strip().lower()
         if _opt_in not in ("true", "1", "yes", "on"):
@@ -248,4 +248,4 @@ def register(ctx):
     ctx.register_tool(name="private_read", toolset="wharenui",
                       schema=private_read_schema, handler=handle_private_read)
 
-    log.info("reflect_settle / reflect_done and journal tools registered")
+    log.info("exit_private / end_session and journal tools registered")

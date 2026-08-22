@@ -1,6 +1,6 @@
 import pytest
 from types import SimpleNamespace
-from wharenui_plugin.phase.tools import handle_reflect_settle, handle_reflect_done
+from wharenui_plugin.phase.tools import handle_exit_private, handle_end_session
 from wharenui_plugin.phase.handler import WharePhaseHandler
 import wharenui_plugin
 
@@ -11,19 +11,19 @@ class FakeAgent:
 
 
 def test_schema_descriptions_are_request_oriented_and_honest():
-    """Verify that reflect tool schemas describe requests, not guaranteed executions."""
-    # Settle schema
-    assert wharenui_plugin._SETTLE_SCHEMA["description"] == "Request returning to the public window from private time."
-    # Done schema
-    assert wharenui_plugin._DONE_SCHEMA["description"] == "Request ending the session from private or closing-private time."
-    # Pause schema
-    assert wharenui_plugin._PAUSE_SCHEMA["description"] == "Request pausing the public window to enter private time."
+    """Verify that phase control tool schemas describe requests, not guaranteed executions."""
+    # Settle schema -> exit_private
+    assert wharenui_plugin._EXIT_PRIVATE_SCHEMA["description"] == "Request returning to the public window from private time."
+    # Done schema -> end_session
+    assert wharenui_plugin._END_SESSION_SCHEMA["description"] == "Request ending the session from private or closing-private time."
+    # Pause schema -> enter_private
+    assert wharenui_plugin._ENTER_PRIVATE_SCHEMA["description"] == "Request pausing the public window to enter private time."
 
     # Fail-red regression assertions: schemas must never make unconditional outcome assertions
     for name, schema in [
-        ("reflect_settle", wharenui_plugin._SETTLE_SCHEMA),
-        ("reflect_done", wharenui_plugin._DONE_SCHEMA),
-        ("reflect_pause", wharenui_plugin._PAUSE_SCHEMA),
+        ("exit_private", wharenui_plugin._EXIT_PRIVATE_SCHEMA),
+        ("end_session", wharenui_plugin._END_SESSION_SCHEMA),
+        ("enter_private", wharenui_plugin._ENTER_PRIVATE_SCHEMA),
     ]:
         desc = schema["description"]
         assert not desc.startswith("Return to"), f"{name} must not assert execution ('Return to...')"
@@ -36,17 +36,19 @@ def test_loopless_control_tools_do_not_assert_outcomes():
     """In a loop-less context without a consuming runner, tools record intent without asserting execution."""
     agent = FakeAgent(phase="private")
     
-    res_settle = handle_reflect_settle(agent=agent)
+    res_settle = handle_exit_private(agent=agent)
     assert res_settle == "Recorded request to return to window."
     assert agent._private_exit is not None
     assert agent._private_exit.action == "resume"
+    assert agent._private_exit.handler == "enter_private"
     assert agent._phase == "private"  # Handler records intent; phase is not mutated by tool handler
 
     agent._private_exit = None
-    res_done = handle_reflect_done(agent=agent)
+    res_done = handle_end_session(agent=agent)
     assert res_done == "Recorded request to end session."
     assert agent._private_exit is not None
     assert agent._private_exit.action == "close"
+    assert agent._private_exit.handler == "enter_private"
     assert agent._phase == "private"  # Phase remains unchanged
 
 
@@ -54,25 +56,25 @@ def test_loopless_control_tools_phase_rejections():
     """Verify honest refusals when tools are called in invalid phases."""
     # Settle rejected during close-out
     agent_close = FakeAgent(phase="closing_private")
-    res = handle_reflect_settle(agent=agent_close)
-    assert res == "Cannot return during close-out. Use reflect_done."
+    res = handle_exit_private(agent=agent_close)
+    assert res == "Cannot return during close-out. Use end_session."
     assert agent_close._private_exit is None
 
     # Done rejected in public phase
     agent_public = FakeAgent(phase="public")
-    res = handle_reflect_done(agent=agent_public)
-    assert res == "Cannot exit from public phase. Use reflect_pause first."
+    res = handle_end_session(agent=agent_public)
+    assert res == "Cannot exit from public phase. Use enter_private first."
     assert agent_public._private_exit is None
 
 
 def test_loopless_control_tools_with_none_agent():
     """Tool execution without an agent instance gracefully records or refuses without crashing."""
-    res_settle = handle_reflect_settle(agent=None)
+    res_settle = handle_exit_private(agent=None)
     assert res_settle == "Recorded request to return to window."
 
-    res_done = handle_reflect_done(agent=None)
-    # With agent=None, default resolved phase is 'public', so reflect_done is safely refused
-    assert res_done == "Cannot exit from public phase. Use reflect_pause first."
+    res_done = handle_end_session(agent=None)
+    # With agent=None, default resolved phase is 'public', so end_session is safely refused
+    assert res_done == "Cannot exit from public phase. Use enter_private first."
 
 
 class MockSubturnAgent:
@@ -89,9 +91,9 @@ class MockSubturnAgent:
         self._current_turn += 1
         if self._current_turn >= self.turns_to_settle:
             if self.exit_action == "settle":
-                handle_reflect_settle(agent=self)
+                handle_exit_private(agent=self)
             elif self.exit_action == "done":
-                handle_reflect_done(agent=self)
+                handle_end_session(agent=self)
             return SimpleNamespace(tool_calls_used=True)
         return SimpleNamespace(tool_calls_used=True)
 
@@ -101,19 +103,19 @@ def test_consuming_loop_consumes_and_clears_private_exit():
     handler = WharePhaseHandler()
     messages = []
 
-    # Case 1: subturn calls reflect_settle -> handler returns resume ControlOutcome
+    # Case 1: subturn calls exit_private -> handler returns resume ControlOutcome
     agent_settle = MockSubturnAgent(turns_to_settle=1, exit_action="settle")
     outcome = handler.run(agent_settle, messages, effective_task_id="test_task")
     assert outcome.action == "resume"
-    assert outcome.handler == "reflect_pause"
+    assert outcome.handler == "enter_private"
     assert outcome.tool_result == "(settled)"
     assert agent_settle._private_exit is None  # Must be cleared upon exit
 
-    # Case 2: subturn calls reflect_done -> handler returns close ControlOutcome
+    # Case 2: subturn calls end_session -> handler returns close ControlOutcome
     agent_done = MockSubturnAgent(turns_to_settle=1, exit_action="done")
     outcome_done = handler.run(agent_done, messages, effective_task_id="test_task")
     assert outcome_done.action == "close"
-    assert outcome_done.handler == "reflect_pause"
+    assert outcome_done.handler == "enter_private"
     assert outcome_done.tool_result == "(session ended)"
     assert agent_done._private_exit is None  # Must be cleared upon exit
 
@@ -135,6 +137,7 @@ def test_consuming_loop_fallback_when_no_tool_calls():
     agent = NoToolAgent()
     outcome = handler.run(agent, messages, effective_task_id="test_task")
     assert outcome.action == "resume"
+    assert outcome.handler == "enter_private"
     assert outcome.tool_result == "(private turn ended)"
 
 
@@ -165,17 +168,18 @@ def test_notice_emitted_on_penultimate_private_turn():
     agent = CappingAgent()
     outcome = handler.run(agent, messages, effective_task_id="test_notice")
     assert outcome.action == "resume"
+    assert outcome.handler == "enter_private"
     assert outcome.tool_result == "(private turn cap reached)"
     assert len(subturn_calls) == MAX_PRIVATE_TURNS
 
     # Verify that on the last turn (index 14), the notice was appended
     last_turn_msgs = subturn_calls[-1][1]
-    assert any("[Notice: 1 private turn remaining before returning to the public window.]" in str(m) for m in last_turn_msgs)
+    assert any("[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]" in str(m) for m in last_turn_msgs)
 
     # Verify earlier turns (e.g. index 0..13) did not have the notice
     for idx in range(MAX_PRIVATE_TURNS - 1):
         turn_msgs = subturn_calls[idx][1]
-        assert not any("[Notice: 1 private turn remaining before returning to the public window.]" in str(m) for m in turn_msgs)
+        assert not any("[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]" in str(m) for m in turn_msgs)
 
 
 
@@ -187,7 +191,7 @@ def test_notice_appended_to_tool_message_when_tail_is_tool():
 
     class MockToolAgent:
         def __init__(self):
-            self.tools = [{"function": {"name": "reflect_settle"}}, {"function": {"name": "journal_read"}}]
+            self.tools = [{"function": {"name": "exit_private"}}, {"function": {"name": "journal_read"}}]
             self._phase = "private"
             self._private_exit = None
             self._call_count = 0
@@ -204,16 +208,17 @@ def test_notice_appended_to_tool_message_when_tail_is_tool():
     agent = MockToolAgent()
     outcome = handler.run(agent, messages, effective_task_id="test_tool_tail")
     assert outcome.action == "resume"
+    assert outcome.handler == "enter_private"
 
     # Find the tool message from the 14th turn (penultimate subturn before turn 15 notice)
     tool_msgs = [m for m in messages if isinstance(m, dict) and m.get("role") == "tool"]
     assert len(tool_msgs) >= 14
     # The tool message from turn 14 should have the notice appended
-    assert any("[Notice: 1 private turn remaining before returning to the public window.]" in m["content"] for m in tool_msgs)
+    assert any("[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]" in m["content"] for m in tool_msgs)
 
 
 def test_handler_aborts_safely_if_no_exit_tools_available():
-    """If neither reflect_settle nor reflect_done are available, run() aborts before wake tape presentation."""
+    """If neither exit_private nor end_session are available, run() aborts before wake tape presentation."""
     handler = WharePhaseHandler()
     messages = []
 
@@ -229,5 +234,6 @@ def test_handler_aborts_safely_if_no_exit_tools_available():
     agent = NoExitToolAgent()
     outcome = handler.run(agent, messages, effective_task_id="test_no_exit")
     assert outcome.action == "resume"
+    assert outcome.handler == "enter_private"
     assert outcome.tool_result == "(no exit tools)"
     assert not getattr(agent, "_wharenui_wake_tape_presented", False)

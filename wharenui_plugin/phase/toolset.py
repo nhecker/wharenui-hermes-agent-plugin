@@ -1,8 +1,8 @@
 """Phase-scoped toolset filter — public vs private."""
-_PUBLIC_ONLY = {"reflect_pause"}
+_PUBLIC_ONLY = {"enter_private"}
 PRIVATE_ALLOWLIST = {
-    "reflect_settle",
-    "reflect_done",
+    "exit_private",
+    "end_session",
     "journal_append",
     "journal_read",
     "journal_list",

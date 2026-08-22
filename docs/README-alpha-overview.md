@@ -14,7 +14,7 @@ Wharenui extends Hermes Agent so that one continuing agent context can move volu
 
 ### Phase Control
 - Generic phase transitions are coordinated with the Hermes seam (`agent/phase_control.py`).
-- Model-facing tools: `reflect_pause` (request private time), `reflect_settle` (request return to public window), `reflect_done` (request ending session).
+- Model-facing tools: `enter_private` (request private time), `exit_private` (request return to public window), `end_session` (request ending session).
 
 ### Journal Package
 - Encrypted storage with Fernet tokens derived from filename stems and master keys.

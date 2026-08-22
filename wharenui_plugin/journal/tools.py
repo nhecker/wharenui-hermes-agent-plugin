@@ -243,7 +243,7 @@ def get_entry_title(e: Any) -> str:
 def _assert_private_phase(agent: Any = None):
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
-        raise PermissionError("Journal tools are private-only and cannot be executed in public phase. Use 'reflect_pause' (or '/pause') to pause public conversation and enter private phase.")
+        raise PermissionError("Journal tools are private-only and cannot be executed in public phase. Use 'enter_private' (or '/pause') to pause public conversation and enter private phase.")
 
 
 

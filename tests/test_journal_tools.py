@@ -264,9 +264,9 @@ def test_open_notebook_registers_without_the_seam(tmp_path):
         "    def register_tool(self, name, toolset, schema, handler): self.tools[name] = schema",
         "ctx = Ctx()",
         "wharenui_plugin.register(ctx)",
-        "for t in ('reflect_pause','reflect_settle','reflect_done'):",
-        "    assert t not in ctx.tools, f'reflect tool registered: {t}'",
-        "print('REFLECT_ABSENT: ok')",
+        "for t in ('enter_private','exit_private','end_session'):",
+        "    assert t not in ctx.tools, f'phase control tool registered: {t}'",
+        "print('PHASE_CONTROL_ABSENT: ok')",
         "for t in ('journal_append','journal_read','journal_list','journal_search','journal_supersede','journal_withdraw'):",
         "    assert t in ctx.tools, f'journal tool missing: {t}'",
         "print('JOURNAL_TOOLS: ok')",
@@ -415,7 +415,7 @@ def test_public_phase_refusal_is_actionable(tmp_path):
     pub_agent = FakeAgent(_phase="public")
     with pytest.raises(PermissionError) as exc_info:
         jtools.handle_journal_append({"content": "test"}, agent=pub_agent)
-    assert "reflect_pause" in str(exc_info.value) or "/pause" in str(exc_info.value)
+    assert "enter_private" in str(exc_info.value) or "/pause" in str(exc_info.value)
 
 
 def test_handle_prefix_resolution_unique_and_ambiguous(tmp_path):

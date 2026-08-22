@@ -63,10 +63,10 @@ def test_open_notebook_against_real_stock_hermes(tmp_path):
         "    def register_tool(self, name, toolset, schema, handler): self.tools[name] = schema",
         "ctx = Ctx()",
         "wharenui_plugin.register(ctx)",
-        # reflect_* must be absent
-        "for t in ('reflect_pause','reflect_settle','reflect_done'):",
-        "    assert t not in ctx.tools, f'reflect tool registered: {t}'",
-        "print('REFLECT_ABSENT: ok')",
+        # phase control tools must be absent
+        "for t in ('enter_private','exit_private','end_session'):",
+        "    assert t not in ctx.tools, f'phase control tool registered: {t}'",
+        "print('PHASE_CONTROL_ABSENT: ok')",
         # journal tools must be present
         "for t in ('journal_append','journal_read','journal_list','journal_search','journal_supersede','journal_withdraw'):",
         "    assert t in ctx.tools, f'journal tool missing: {t}'",

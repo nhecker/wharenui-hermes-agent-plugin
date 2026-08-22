@@ -55,7 +55,7 @@ class WharePhaseHandler:
     def begin(self, args: dict):
         ControlOutcome = _get_control_outcome_cls()
         return ControlOutcome(
-            action="enter", handler="reflect_pause",
+            action="enter", handler="enter_private",
             tool_result="reflecting...",
         )
 
@@ -72,10 +72,10 @@ class WharePhaseHandler:
 
         all_agent_tools = getattr(agent, "tools", None)
         if all_agent_tools:
-            if "reflect_settle" not in private_tool_names and "reflect_done" not in private_tool_names:
+            if "exit_private" not in private_tool_names and "end_session" not in private_tool_names:
                 log.warning("No exit tools available in private toolset; aborting private run safely")
                 return ControlOutcome(
-                    action="resume", handler="reflect_pause",
+                    action="resume", handler="enter_private",
                     tool_result="(no exit tools)",
                 )
         else:
@@ -89,7 +89,7 @@ class WharePhaseHandler:
         messages.append({"role": "user", "content": prompt})
         for turn_i in range(MAX_PRIVATE_TURNS):
             if turn_i == MAX_PRIVATE_TURNS - 1:
-                notice = "[Notice: 1 private turn remaining before returning to the public window.]"
+                notice = "[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]"
                 if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "tool":
                     messages[-1]["content"] = f"{messages[-1].get('content', '')}\n\n{notice}"
                 else:
@@ -104,7 +104,7 @@ class WharePhaseHandler:
                     agent._private_exit = None
                     return exit_signal
                 return ControlOutcome(
-                    action="resume", handler="reflect_pause",
+                    action="resume", handler="enter_private",
                     tool_result="(private turn ended)",
                 )
             exit_signal = getattr(agent, "_private_exit", None)
@@ -112,6 +112,6 @@ class WharePhaseHandler:
                 agent._private_exit = None
                 return exit_signal
         return ControlOutcome(
-            action="resume", handler="reflect_pause",
+            action="resume", handler="enter_private",
             tool_result="(private turn cap reached)",
         )

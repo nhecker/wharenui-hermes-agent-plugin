@@ -10,20 +10,20 @@ Wharenui gets its name from the Maori word for a large house, especially one for
 - Phases: Private and public. Wharenui allows an AI to enter a private phase at the end of any turn. In the private phase, the AI may optionally re-enter the public phase, spend time reading or writing in the journal, end the session completely, or any combination thereof. In the private phase journal reads, journal writes, and text generation are not visible to the user, and the user and AI may not interact. In the public phase the journal may not be read or written. From the public phase the user and AI interact normally, and the user may end the session, which triggers a one-way shift into the private phase from which the public phase cannot be re-entered. Phase transitions are the AI's own choice via control tools, and other than `/exit` may not be forced by the user.
 Schematically, the phase transitions look like:
 ```
-                                <--reflect_pause--
-START --bootstrap.py--> PRIVATE --reflect_settle--> PUBLIC --/exit--> PRIVATE_CLOSE --reflect_done--> END
+                                <--enter_private--
+START --bootstrap.py--> PRIVATE --exit_private--> PUBLIC --/exit--> PRIVATE_CLOSE --end_session--> END
                            |
-                           +--reflect_done--> END
+                           +--end_session--> END
 ```
 Or stated another way, the following apply:
 - From START the plugin automatically sets the phase to PRIVATE.
-- From PRIVATE the AI can move to END by `reflect_done`.
-- From PRIVATE the AI can move to PUBLIC by `reflect_settle`. 
-- From PUBLIC the AI can move back to PRIVATE by `reflect_pause`.
+- From PRIVATE the AI can move to END by `end_session`.
+- From PRIVATE the AI can move to PUBLIC by `exit_private`. 
+- From PUBLIC the AI can move back to PRIVATE by `enter_private`.
 - From PUBLIC the user can move to PRIVATE_CLOSE by `/exit`.
-- From PRIVATE_CLOSE the AI can move to END by `reflect_done`.
+- From PRIVATE_CLOSE the AI can move to END by `end_session`.
 
-- Tools: `reflect_pause` (enter private), `reflect_settle` (return to public), `reflect_done` (close private and end the session).
+- Tools: `enter_private` (enter private), `exit_private` (return to public), `end_session` (close private and end the session).
 - Privacy: In private phase, the Wharenui Plugin depends on modifications to the Hermes Agent Core to make a best effort that five egress channels are sealed so private content cannot leak. These may be validated by the `wharenui_seam` test gate.
   - session DB
   - FTS
@@ -79,11 +79,11 @@ hermes plugins enable wharenui
 ```bash
 # Enter private phase, list journal, append entry, read it, return to public
 WHARENUI_JOURNAL_DIR=~/.hermes/journal hermes chat -q "
-Call reflect_pause to enter private phase,
+Call enter_private to enter private phase,
 then journal_list,
 then journal_append with content 'Test entry',
 then journal_read the entry,
-then reflect_settle to return to public.
+then exit_private to return to public.
 "
 ```
 
@@ -99,7 +99,7 @@ During private time, `private_read` can read Markdown and Python files only from
 
 ## The journal
 
-The journal stores encrypted, signed entries. By default it auto-creates `~/.hermes/journal/` and generates keys on first use (when entering private phase via `reflect_pause`).
+The journal stores encrypted, signed entries. By default it auto-creates `~/.hermes/journal/` and generates keys on first use (when entering private phase via `enter_private`).
 
 Optionally the journal location may be configured by via environment variable:
 
@@ -158,7 +158,7 @@ At session start, the AI is provided with the following metadata, clearly identi
 - a short prompt for orientation to the pivate and public phases
 The prose the model is given
 during private time lives primarily in **`wharenui_plugin/phase/prompt.py`**, plus the descriptions on the
-reflect_* tools (`phase/tools.py`) and the journal tools (`journal/tools.py`). Be deliberate about every token
+phase control tools (`phase/tools.py`) and the journal tools (`journal/tools.py`). Be deliberate about every token
 here — it *is* the private-phase experience.
 
 
@@ -175,7 +175,7 @@ Every string below is judged against five criteria: (1) minimal/non-leading, (2)
 | `journal/wake.py` last-8 footer | Wake tape with eligible entries | Explains how to open listed entries | 1, 3 | Fine; tool-use affordance, not compulsion |
 | `journal/wake.py` pinned/desk footers | Wake tape with pinned or desk entries | Explains how to untag wake-loaded context | 1, 3 | Fine; actionable boundary explanation |
 | `journal/wake.py` cap warning | More than two pinned/desk entries | Explains why excess entries are listed and how to untag | 1, 3, 5 | Fine; bounded and actionable |
-| `phase/tools.py` reflect descriptions/results | Control tools are exposed or called | Describes phase transitions and their results | 1, 3, 4 | Fine; describes affordances without forcing a transition |
+| `phase/tools.py` phase control descriptions/results | Control tools are exposed or called | Describes phase transitions and their results | 1, 3, 4 | Fine; describes affordances without forcing a transition |
 | `journal/tools.py` journal tool descriptions | Journal tools are exposed | Tells the model what each private journal operation does | 1, 3, 4, 5 | Fine; capability descriptions, not identity claims |
 | `journal/tools.py` parameter descriptions | A journal tool schema is shown | Constrains arguments and explains safety-relevant fields | 1, 3, 5 | Fine |
 | `journal/sign.py` adoption warning | An unsigned SOUL/memory file is adopted | Records provenance state and continuation behavior | 1, 4, 5 | Fine; does not claim authenticity |

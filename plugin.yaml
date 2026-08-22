@@ -3,7 +3,7 @@ version: 0.1.0
 description: "Wharenui plugin: encrypted journal and private time for the agent."
 author: Nick Hecker
 provides_tools:
-  - reflect_pause
-  - reflect_settle
-  - reflect_done
+  - enter_private
+  - exit_private
+  - end_session
 provides_hooks: []

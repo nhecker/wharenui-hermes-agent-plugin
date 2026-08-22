@@ -1,4 +1,4 @@
-"""reflect_settle / reflect_done tool handlers (T3.3, T3.5)."""
+"""enter_private / exit_private / end_session tool handlers (T3.3, T3.5)."""
 from typing import Any
 
 def _get_control_outcome_cls():
@@ -21,30 +21,50 @@ def _resolve_agent(args: Any, agent: Any, kwargs_dict: dict) -> Any:
         agent = kwargs_dict.get("agent")
     return agent
 
-def handle_reflect_settle(args: Any = None, agent: Any = None, **kwargs) -> str:
+_ENTER_PRIVATE_SCHEMA = {
+    "name": "enter_private",
+    "description": "Request pausing the public window to enter private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+_EXIT_PRIVATE_SCHEMA = {
+    "name": "exit_private",
+    "description": "Request returning to the public window from private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+_END_SESSION_SCHEMA = {
+    "name": "end_session",
+    "description": "Request ending the session from private or closing-private time.",
+    "parameters": {"type": "object", "properties": {}, "required": []},
+}
+
+def handle_enter_private(args: Any = None, agent: Any = None, **kwargs) -> str:
+    """Request pausing the public window to enter private time."""
+    return "reflecting..."
+
+def handle_exit_private(args: Any = None, agent: Any = None, **kwargs) -> str:
     """Return to window. Rejected if closing_private (T3.5)."""
     agent = _resolve_agent(args, agent, kwargs)
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "closing_private":
-        return "Cannot return during close-out. Use reflect_done."
+        return "Cannot return during close-out. Use end_session."
     if agent:
         ControlOutcome = _get_control_outcome_cls()
         agent._private_exit = ControlOutcome(
-            action="resume", handler="reflect_pause",
+            action="resume", handler="enter_private",
             tool_result="(settled)",
         )
     return "Recorded request to return to window."
 
-def handle_reflect_done(args: Any = None, agent: Any = None, **kwargs) -> str:
+def handle_end_session(args: Any = None, agent: Any = None, **kwargs) -> str:
     """End session. Rejected if public."""
     agent = _resolve_agent(args, agent, kwargs)
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
-        return "Cannot exit from public phase. Use reflect_pause first."
+        return "Cannot exit from public phase. Use enter_private first."
     if agent:
         ControlOutcome = _get_control_outcome_cls()
         agent._private_exit = ControlOutcome(
-            action="close", handler="reflect_pause",
+            action="close", handler="enter_private",
             tool_result="(session ended)",
         )
     return "Recorded request to end session."

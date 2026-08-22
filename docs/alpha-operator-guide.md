@@ -25,7 +25,7 @@ Wharenui operates across two repositories following Michael Feathers' seam model
 ```
 
 * **The Fork (`wharenui-hermes-agent`)**: A minimal, generic fork of upstream Hermes Agent (`NousResearch/hermes-agent`). It provides the `PhaseHandler` Protocol, seals the five public egress channels, and implements fail-safe liveness guards (reverting to public mode if no plugin is loaded).
-* **The Plugin (`wharenui-hermes-agent-plugin`)**: A standard Hermes skill/plugin providing private reflection tools (`reflect_pause`, `reflect_settle`, `reflect_done`), journal management tools (`journal_append`, `journal_read`, `journal_list`, `journal_search`, `journal_supersede`, `journal_withdraw`, `journal_acknowledge_edit`), and wake-tape context generation.
+* **The Plugin (`wharenui-hermes-agent-plugin`)**: A standard Hermes skill/plugin providing private phase control tools (`enter_private`, `exit_private`, `end_session`), journal management tools (`journal_append`, `journal_read`, `journal_list`, `journal_search`, `journal_supersede`, `journal_withdraw`, `journal_acknowledge_edit`), and wake-tape context generation.
 
 ---
 
