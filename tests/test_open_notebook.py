@@ -152,3 +152,42 @@ def test_open_notebook_rejects_bogus_value():
         env={k: v for k, v in os.environ.items() if k != "WHARENUI_OPEN_NOTEBOOK"},
     )
     assert "REJECTED: ok" in result.stdout, f"bogus value not rejected:\n{result.stdout}{result.stderr}"
+
+
+def test_open_notebook_tool_execution(tmp_path):
+    """Verify journal tool dispatch succeeds in open-notebook mode without PermissionError."""
+    plugin_root = str(Path(__file__).resolve().parent.parent)
+    journal_dir = str(tmp_path / "journal")
+
+    lines = [
+        "import sys, os, json",
+        "from pathlib import Path",
+        f"sys.path.insert(0, {plugin_root!r})",
+        "os.environ['WHARENUI_OPEN_NOTEBOOK'] = 'true'",
+        f"os.environ['WHARENUI_JOURNAL_DIR'] = {journal_dir!r}",
+        f"Path({journal_dir!r}).mkdir(parents=True, exist_ok=True)",
+        "import wharenui_plugin",
+        "class Ctx:",
+        "    def __init__(self): self.handlers = {}",
+        "    def register_tool(self, name, toolset, schema, handler): self.handlers[name] = handler",
+        "ctx = Ctx()",
+        "wharenui_plugin.register(ctx)",
+        "assert wharenui_plugin.SEAM_STATE == 'absent'",
+        "# Test dispatching handle_journal_append directly without agent (public phase)",
+        "append_handler = ctx.handlers['journal_append']",
+        "res = json.loads(append_handler({'content': 'Public journal entry in open notebook mode'}))",
+        "assert res['status'] == 'success'",
+        "handle = res['handle']",
+        "# Test reading it back",
+        "read_handler = ctx.handlers['journal_read']",
+        "read_res = json.loads(read_handler({'handle': handle}))",
+        "assert read_res['content'] == 'Public journal entry in open notebook mode'",
+        "print('OPEN_NOTEBOOK_DISPATCH: ok')",
+    ]
+    result = subprocess.run(
+        [sys.executable, "-c", "\n".join(lines)],
+        capture_output=True, text=True, timeout=15,
+        env={k: v for k, v in os.environ.items() if k != "WHARENUI_OPEN_NOTEBOOK"},
+    )
+    assert "OPEN_NOTEBOOK_DISPATCH: ok" in result.stdout, f"open notebook dispatch failed:\n{result.stdout}{result.stderr}"
+

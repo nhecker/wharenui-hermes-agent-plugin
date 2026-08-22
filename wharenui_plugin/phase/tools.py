@@ -42,9 +42,11 @@ def handle_enter_private(args: Any = None, agent: Any = None, **kwargs) -> str:
     return "reflecting..."
 
 def handle_exit_private(args: Any = None, agent: Any = None, **kwargs) -> str:
-    """Return to window. Rejected if closing_private (T3.5)."""
+    """Return to window. Rejected if public or closing_private (T3.5)."""
     agent = _resolve_agent(args, agent, kwargs)
     phase = getattr(agent, "_phase", "public") if agent else "public"
+    if phase == "public":
+        return "Cannot return from public phase. Use enter_private first."
     if phase == "closing_private":
         return "Cannot return during close-out. Use end_session."
     if agent:

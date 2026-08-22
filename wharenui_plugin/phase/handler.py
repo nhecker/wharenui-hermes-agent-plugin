@@ -63,6 +63,9 @@ class WharePhaseHandler:
         """Bounded private loop via run_subturn."""
         ControlOutcome = _get_control_outcome_cls()
 
+        agent._private_exit = None
+        agent._pending_phase_transition = None
+
         task_id = effective_task_id or "private"
         private_tool_set = private_tools(getattr(agent, "tools", []) or [])
         private_tool_names = {
@@ -87,31 +90,35 @@ class WharePhaseHandler:
         from wharenui_plugin import get_seam_state
         prompt = get_private_prompt(get_seam_state())
         messages.append({"role": "user", "content": prompt})
-        for turn_i in range(MAX_PRIVATE_TURNS):
-            if turn_i == MAX_PRIVATE_TURNS - 1:
-                notice = "[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]"
-                if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "tool":
-                    messages[-1]["content"] = f"{messages[-1].get('content', '')}\n\n{notice}"
-                else:
-                    messages.append({"role": "user", "content": notice})
-            result = agent.run_subturn(
-                messages, tool_names=private_tool_names,
-                task_id=f"{task_id}:t{turn_i}",
-            )
-            if not result.tool_calls_used:
+        try:
+            for turn_i in range(MAX_PRIVATE_TURNS):
+                if turn_i == MAX_PRIVATE_TURNS - 1:
+                    notice = "[Notice: 1 private turn remaining before returning to the public window. Use exit_private or end_session.]"
+                    if messages and isinstance(messages[-1], dict) and messages[-1].get("role") == "tool":
+                        messages[-1]["content"] = f"{messages[-1].get('content', '')}\n\n{notice}"
+                    else:
+                        messages.append({"role": "user", "content": notice})
+                result = agent.run_subturn(
+                    messages, tool_names=private_tool_names,
+                    task_id=f"{task_id}:t{turn_i}",
+                )
+                if not result.tool_calls_used:
+                    exit_signal = getattr(agent, "_private_exit", None)
+                    if exit_signal is not None:
+                        agent._private_exit = None
+                        return exit_signal
+                    return ControlOutcome(
+                        action="resume", handler="enter_private",
+                        tool_result="(private turn ended)",
+                    )
                 exit_signal = getattr(agent, "_private_exit", None)
                 if exit_signal is not None:
                     agent._private_exit = None
                     return exit_signal
-                return ControlOutcome(
-                    action="resume", handler="enter_private",
-                    tool_result="(private turn ended)",
-                )
-            exit_signal = getattr(agent, "_private_exit", None)
-            if exit_signal is not None:
-                agent._private_exit = None
-                return exit_signal
-        return ControlOutcome(
-            action="resume", handler="enter_private",
-            tool_result="(private turn cap reached)",
-        )
+            return ControlOutcome(
+                action="resume", handler="enter_private",
+                tool_result="(private turn cap reached)",
+            )
+        finally:
+            agent._private_exit = None
+            agent._pending_phase_transition = None

@@ -69,12 +69,19 @@ def test_loopless_control_tools_phase_rejections():
 
 def test_loopless_control_tools_with_none_agent():
     """Tool execution without an agent instance gracefully records or refuses without crashing."""
+    # With agent=None, default resolved phase is 'public', so exit_private and end_session are safely refused
     res_settle = handle_exit_private(agent=None)
-    assert res_settle == "Recorded request to return to window."
+    assert res_settle == "Cannot return from public phase. Use enter_private first."
 
     res_done = handle_end_session(agent=None)
-    # With agent=None, default resolved phase is 'public', so end_session is safely refused
     assert res_done == "Cannot exit from public phase. Use enter_private first."
+
+    # With private agent, exit_private records request to return to window
+    agent_priv = FakeAgent(phase="private")
+    res_priv = handle_exit_private(agent=agent_priv)
+    assert res_priv == "Recorded request to return to window."
+    assert agent_priv._private_exit is not None
+    assert agent_priv._private_exit.action == "resume"
 
 
 class MockSubturnAgent:

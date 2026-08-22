@@ -241,9 +241,12 @@ def get_entry_title(e: Any) -> str:
     return "(untitled)"
 
 def _assert_private_phase(agent: Any = None):
+    from wharenui_plugin import get_seam_state
+    if get_seam_state() == "absent":
+        return
     phase = getattr(agent, "_phase", "public") if agent else "public"
     if phase == "public":
-        raise PermissionError("Journal tools are private-only and cannot be executed in public phase. Use 'enter_private' (or '/pause') to pause public conversation and enter private phase.")
+        raise PermissionError("Journal tools are private-only and cannot be executed in public phase. Use 'enter_private' to pause public conversation and enter private phase.")
 
 
 

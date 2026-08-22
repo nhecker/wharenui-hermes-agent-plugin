@@ -206,10 +206,16 @@ def register(ctx):
             phase_handler=handler,
         )
         log.info("enter_private registered as control tool")
-        ctx.register_tool(name="exit_private", toolset="wharenui",
-                          schema=exit_private_schema, handler=handle_exit_private)
-        ctx.register_tool(name="end_session", toolset="wharenui",
-                          schema=end_session_schema, handler=handle_end_session)
+        ctx.register_tool(
+            name="exit_private", toolset="wharenui",
+            schema=exit_private_schema,
+            handler=handle_exit_private,
+        )
+        ctx.register_tool(
+            name="end_session", toolset="wharenui",
+            schema=end_session_schema,
+            handler=handle_end_session,
+        )
     else:
         _opt_in = os.environ.get("WHARENUI_OPEN_NOTEBOOK", "").strip().lower()
         if _opt_in not in ("true", "1", "yes", "on"):
