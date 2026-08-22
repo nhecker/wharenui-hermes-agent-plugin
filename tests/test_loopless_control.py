@@ -244,3 +244,45 @@ def test_handler_aborts_safely_if_no_exit_tools_available():
     assert outcome.handler == "enter_private"
     assert outcome.tool_result == "(no exit tools)"
     assert not getattr(agent, "_wharenui_wake_tape_presented", False)
+
+
+def test_handler_passes_full_private_toolset_to_subturn():
+    """Verify that WharePhaseHandler.run passes the full private allowlist to run_subturn,
+    even when the agent has public tools or valid_tool_names where non-core tools were deferred."""
+    from wharenui_plugin.phase.toolset import PRIVATE_ALLOWLIST
+    handler = WharePhaseHandler()
+    messages = []
+
+    passed_tool_names = []
+
+    class RealStyleAgent:
+        def __init__(self):
+            # In real Hermes, public tools contain core tools and exit tools, but deferred journal tools
+            self.tools = [
+                {"type": "function", "function": {"name": "terminal"}},
+                {"type": "function", "function": {"name": "exit_private"}},
+                {"type": "function", "function": {"name": "end_session"}},
+            ]
+            self.valid_tool_names = {"terminal", "exit_private", "end_session"}
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            passed_tool_names.append(set(tool_names))
+            handle_exit_private(agent=self)
+            return SimpleNamespace(tool_calls_used=True)
+
+    agent = RealStyleAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_full_toolset")
+    assert outcome.action == "resume"
+    assert len(passed_tool_names) == 1
+    # Full PRIVATE_ALLOWLIST must be passed to subturn
+    assert "journal_read" in passed_tool_names[0]
+    assert "journal_append" in passed_tool_names[0]
+    assert "journal_acknowledge_edit" in passed_tool_names[0]
+    assert "journal_search" in passed_tool_names[0]
+    assert "journal_supersede" in passed_tool_names[0]
+    assert "journal_withdraw" in passed_tool_names[0]
+    assert "exit_private" in passed_tool_names[0]
+    assert "end_session" in passed_tool_names[0]
+    assert PRIVATE_ALLOWLIST.issubset(passed_tool_names[0])

@@ -70,13 +70,18 @@ class WharePhaseHandler:
         from ..phase.toolset import PRIVATE_ALLOWLIST
         private_tool_names = set(PRIVATE_ALLOWLIST)
 
-        valid_names = getattr(agent, "valid_tool_names", None)
-        if valid_names:
-            private_tool_names &= valid_names
-        elif getattr(agent, "tools", None) is not None:
-            agent_tool_names = {(t.get("function", {}) or {}).get("name") for t in agent.tools}
+        disabled_ts = getattr(agent, "disabled_toolsets", None) or ()
+        if "wharenui" in disabled_ts:
+            private_tool_names = set()
+
+        enabled_ts = getattr(agent, "enabled_toolsets", None)
+        if enabled_ts is not None and "wharenui" not in enabled_ts:
+            private_tool_names = set()
+
+        if getattr(agent, "tools", None) is not None:
+            agent_tool_names = {(t.get("function", {}) or {}).get("name") for t in agent.tools if isinstance(t, dict)}
             if agent_tool_names and not (agent_tool_names & PRIVATE_ALLOWLIST):
-                private_tool_names &= agent_tool_names
+                private_tool_names = set()
 
         if "exit_private" not in private_tool_names and "end_session" not in private_tool_names:
             log.warning("No exit tools available in private toolset; aborting private run safely")
