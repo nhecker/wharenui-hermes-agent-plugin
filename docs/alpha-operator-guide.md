@@ -229,15 +229,199 @@ The wake tape is constructed deterministically from 7 sections in [`journal/wake
 7. **Desk Entries**: Up to 2 desk entries with full bodies; remainder listed by handle with warning if over cap.
 8. **Orientation Prompt**: Closed with the private prompt and available tool inventory.
 
-### What to Back Up
-To preserve an AI's private state, back up the following two directories:
-```bash
-# Complete journal backup (keys, encrypted entries, index, tombstones)
-tar -czf wharenui-journal-backup-$(date +%F).tar.gz -C ~/.hermes journal
+### Comprehensive Backup & Restore Procedures
 
-# Memory and detached signatures backup
-tar -czf wharenui-memories-backup-$(date +%F).tar.gz -C ~/.hermes memories
+To preserve an AI's private state, memories, and cryptographic provenance, operators must follow rigorous backup and restore procedures. Wharenui stores all sensitive state in `~/.hermes/journal` and `~/.hermes/memories` (along with root persona files like `~/.hermes/SOUL.md`).
+
+> [!IMPORTANT]
+> **Key Preservation & Permissions Invariant**:
+> 1. Wharenui encrypts all journal entries using a Fernet key derived from `~/.hermes/journal/journal.key`. If this file is lost or corrupted, all encrypted journal entries are **permanently unrecoverable**.
+> 2. All detached signatures are validated against the Ed25519 keypair in `~/.hermes/journal/signing.key`.
+> 3. Archives **must** preserve POSIX permissions (`tar -p`). Post-restore permission hardening (`0700` for `journal/`, `0600` for keys/entries/signatures) is mandatory for safety checks to pass.
+
+#### 1. Inventory of Backed-Up State
+
+| Path | Contents / Description | Criticality | Permissions |
+|---|---|---|---|
+| `~/.hermes/journal/journal.key` | 32-byte Fernet master key (Base64, 44 bytes) | **Critical** (Loss = permanent data loss) | `0600` |
+| `~/.hermes/journal/signing.key` | Ed25519 private signing key (Raw, 32 bytes) | **Critical** (Loss = provenance validation failure) | `0600` |
+| `~/.hermes/journal/embeddings.db` | SQLite vector store database with HMAC-hashed lookup keys | High (Vector index for `journal_search`) | `0600` |
+| `~/.hermes/journal/*.md` | Fernet-encrypted private journal markdown entries | High (Entry content & metadata) | `0600` |
+| `~/.hermes/journal/*.md.sig` | Detached Ed25519 binary signatures for journal entries | High (Tamper detection & byte integrity) | `0600` |
+| `~/.hermes/journal/*.tomb.md` | Encrypted tombstone records (withdrawn/superseded markers) | High (Append-only audit trail) | `0600` |
+| `~/.hermes/memories/USER.md` | User preferences and operator instructions | High (Injected into wake tape) | `0600` |
+| `~/.hermes/memories/MEMORY.md` | Long-term factual memory document | High (Injected into wake tape) | `0600` |
+| `~/.hermes/memories/*.sig` | Detached Ed25519 binary signatures for memory documents | High (Provenance verification) | `0600` |
+| `~/.hermes/SOUL.md` & `.sig` | Persona and identity definition document + signature | High (Injected into wake tape) | `0600` |
+
+#### 2. Step-by-Step Backup Procedures
+
+Backups should be run while Hermes is quiescent or between interaction sessions. Use `tar -czpf` to ensure POSIX permissions, ownership, and timestamps are strictly preserved.
+
+##### Option A: Single Unified Backup Archive (Recommended)
+This captures the complete habitat (`journal/`, `memories/`, and root memory files) into a single timestamped archive:
+
+```bash
+# Set destination backup directory
+BACKUP_DIR="${BACKUP_DEST:-${HOME}/wharenui-backups}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+mkdir -p "${BACKUP_DIR}"
+
+# Create unified backup archive with preserved permissions
+tar -czpf "${BACKUP_DIR}/wharenui-backup-${TIMESTAMP}.tar.gz" \
+  -C ~/.hermes \
+  journal \
+  memories \
+  $( [ -f ~/.hermes/SOUL.md ] && echo "SOUL.md" ) \
+  $( [ -f ~/.hermes/SOUL.md.sig ] && echo "SOUL.md.sig" )
+
+# Verify archive contents
+tar -tvzf "${BACKUP_DIR}/wharenui-backup-${TIMESTAMP}.tar.gz"
 ```
+
+##### Option B: Modular / Split Backups
+If maintaining separate backup policies for journal entries and memory documents:
+
+```bash
+BACKUP_DIR="${BACKUP_DEST:-${HOME}/wharenui-backups}"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+mkdir -p "${BACKUP_DIR}"
+
+# 1. Journal backup (keys, entries, index, tombstones)
+tar -czpf "${BACKUP_DIR}/wharenui-journal-backup-${TIMESTAMP}.tar.gz" \
+  -C ~/.hermes journal
+
+# 2. Memories backup (memory docs, root SOUL.md, detached signatures)
+tar -czpf "${BACKUP_DIR}/wharenui-memories-backup-${TIMESTAMP}.tar.gz" \
+  -C ~/.hermes \
+  memories \
+  $( [ -f ~/.hermes/SOUL.md ] && echo "SOUL.md" ) \
+  $( [ -f ~/.hermes/SOUL.md.sig ] && echo "SOUL.md.sig" )
+```
+
+#### 3. Step-by-Step Restore Procedures
+
+##### Phase 1: Pre-Restore Verification & Process Stoppage
+1. **Stop active processes**: Ensure Hermes or any background agent processes are stopped before modifying storage files:
+   ```bash
+   pkill -f "hermes" || true
+   ```
+2. **Ensure destination directory exists**:
+   ```bash
+   mkdir -p ~/.hermes
+   ```
+3. **Safety Snapshot (Pre-Restore Guard)**:
+   If existing state exists in `~/.hermes`, create a safety snapshot before overwriting:
+   ```bash
+   if [ -d ~/.hermes/journal ] || [ -d ~/.hermes/memories ]; then
+     SAFETY_TS=$(date +%Y%m%d_%H%M%S)
+     mkdir -p "${HOME}/wharenui-backups"
+     tar -czpf "${HOME}/wharenui-backups/pre-restore-safety-${SAFETY_TS}.tar.gz" \
+       -C ~/.hermes \
+       $( [ -d ~/.hermes/journal ] && echo "journal" ) \
+       $( [ -d ~/.hermes/memories ] && echo "memories" ) \
+       $( [ -f ~/.hermes/SOUL.md ] && echo "SOUL.md" ) \
+       $( [ -f ~/.hermes/SOUL.md.sig ] && echo "SOUL.md.sig" )
+     echo "Saved pre-restore safety archive to pre-restore-safety-${SAFETY_TS}.tar.gz"
+   fi
+   ```
+
+##### Phase 2: Archive Extraction
+Extract the archive into `~/.hermes` preserving POSIX permissions:
+
+```bash
+# For a unified archive:
+ARCHIVE_PATH="/path/to/wharenui-backup-YYYYMMDD_HHMMSS.tar.gz"
+tar -xzvpf "${ARCHIVE_PATH}" -C ~/.hermes
+
+# (Or for split archives):
+# tar -xzvpf /path/to/wharenui-journal-backup-*.tar.gz -C ~/.hermes
+# tar -xzvpf /path/to/wharenui-memories-backup-*.tar.gz -C ~/.hermes
+```
+
+##### Phase 3: Permission Hardening
+Apply strict POSIX permission constraints to ensure keys and entries are inaccessible to other system users:
+
+```bash
+# 1. Journal directory must be 0700 (owner only)
+chmod 700 ~/.hermes/journal
+
+# 2. Cryptographic keys must be 0600 (owner read/write only)
+chmod 600 ~/.hermes/journal/journal.key ~/.hermes/journal/signing.key 2>/dev/null || true
+
+# 3. Journal entries, tombstones, signatures, and SQLite index
+chmod 600 ~/.hermes/journal/*.md ~/.hermes/journal/*.sig ~/.hermes/journal/*.tomb.md ~/.hermes/journal/embeddings.db 2>/dev/null || true
+
+# 4. Memories directory and memory documents / signatures
+chmod 700 ~/.hermes/memories 2>/dev/null || true
+chmod 600 ~/.hermes/memories/* 2>/dev/null || true
+chmod 600 ~/.hermes/SOUL.md ~/.hermes/SOUL.md.sig 2>/dev/null || true
+```
+
+##### Phase 4: Post-Restore Health & Validation Procedure
+Run this automated validation command to verify key readability, entry decryptability, signature verification, and wake-tape assembly:
+
+```bash
+python3 -c "
+import os
+from pathlib import Path
+from wharenui_plugin.journal import crypto, sign, storage, wake, tools
+
+hermes_home = Path(os.path.expanduser('~/.hermes'))
+journal_dir = hermes_home / 'journal'
+memories_dir = hermes_home / 'memories'
+
+print('1. Validating cryptographic keys...')
+mkey = crypto.load_key(journal_dir / 'journal.key')
+assert mkey is not None and len(mkey) == 44, 'Fernet master key missing or corrupt'
+skey = sign.load_signing_key(journal_dir / 'signing.key')
+assert skey is not None, 'Ed25519 signing key missing or corrupt'
+vkey = skey.public_key()
+print('   ✓ Fernet master key and Ed25519 signing key loaded successfully.')
+
+print('2. Validating entry decryption & active listing...')
+entries = storage.list_entries(journal_dir, master_key=mkey)
+print(f'   ✓ Decrypted {len(entries)} active entries cleanly.')
+
+print('3. Validating memory detached signatures...')
+paths_to_verify = [memories_dir]
+if (hermes_home / 'SOUL.md').exists():
+    paths_to_verify.append(hermes_home / 'SOUL.md')
+states = sign.verify_directories(paths_to_verify, vkey)
+for path_str, state in states.items():
+    print(f'   - {path_str}: {state}')
+    assert state == 'verified', f'Signature verification failed for {path_str}: {state}'
+print('   ✓ All memory documents verified against Ed25519 key.')
+
+print('4. Validating wake tape assembly...')
+tape = wake.assemble_wake_tape(journal_dir, memories_dir, master_key=mkey, seam_state='ok')
+assert 'Wake tape follows' in tape
+assert '**Now:' in tape
+assert '## Orientation' in tape
+print('   ✓ Wake tape assembled successfully.')
+
+print('5. Validating filesystem permissions...')
+assert (journal_dir.stat().st_mode & 0o777) == 0o700, 'journal/ directory permissions must be 0700'
+assert (journal_dir / 'journal.key').stat().st_mode & 0o777 == 0o600, 'journal.key permissions must be 0600'
+assert (journal_dir / 'signing.key').stat().st_mode & 0o777 == 0o600, 'signing.key permissions must be 0600'
+print('   ✓ Permission hardening verified.')
+
+print('\n======================================================')
+print('  RESTORE VERIFICATION COMPLETE: HABITAT IS READY     ')
+print('======================================================')
+"
+```
+
+#### 4. Disaster Recovery & Troubleshooting
+
+* **`FileNotFoundError: Missing master key file: '.../journal.key'`**:
+  Occurs if `~/.hermes/journal` contains `.md` entries but no `journal.key`. Restore `journal.key` from your backup archive. Do **not** generate a new key, as it will be unable to decrypt existing entries.
+* **`FileNotFoundError: Missing signing key file: '.../signing.key'`**:
+  Occurs if journal entries exist without `signing.key`. Restore `signing.key` from backup to re-enable signature verification.
+* **Signature Mismatch (`invalid`)**:
+  If a file was modified out-of-band post-restore, `sign.verify_directories` will mark it `invalid`. In private phase, run `journal_acknowledge_edit` to re-sign recognised modifications.
+* **Cross-Host Migration**:
+  Wharenui backups are fully host-agnostic and contain no hardcoded absolute paths. Restoring a `wharenui-backup-*.tar.gz` onto a different machine or user account immediately reproduces the complete habitat.
 
 ---
 
