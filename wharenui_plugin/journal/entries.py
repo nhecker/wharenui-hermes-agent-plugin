@@ -7,7 +7,24 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-ENTRY_KINDS = frozenset({"reflection", "reference", "tombstone"})
+ENTRY_KINDS = frozenset({
+    "thought",
+    "memory",
+    "note",
+    "reflection",
+    "observation",
+    "decision",
+    "plan",
+    "draft",
+    "task",
+    "question",
+    "finding",
+    "summary",
+    "log",
+    "custom",
+    "reference",
+    "tombstone",
+})
 
 
 @dataclass
