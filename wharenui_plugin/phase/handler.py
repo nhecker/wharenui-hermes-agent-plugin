@@ -67,23 +67,23 @@ class WharePhaseHandler:
         agent._pending_phase_transition = None
 
         task_id = effective_task_id or "private"
-        private_tool_set = private_tools(getattr(agent, "tools", []) or [])
-        private_tool_names = {
-            (t.get("function", {}) or {}).get("name")
-            for t in private_tool_set
-        }
+        from ..phase.toolset import PRIVATE_ALLOWLIST
+        private_tool_names = set(PRIVATE_ALLOWLIST)
 
-        all_agent_tools = getattr(agent, "tools", None)
-        if all_agent_tools:
-            if "exit_private" not in private_tool_names and "end_session" not in private_tool_names:
-                log.warning("No exit tools available in private toolset; aborting private run safely")
-                return ControlOutcome(
-                    action="resume", handler="enter_private",
-                    tool_result="(no exit tools)",
-                )
-        else:
-            from ..phase.toolset import PRIVATE_ALLOWLIST
-            private_tool_names = set(PRIVATE_ALLOWLIST)
+        valid_names = getattr(agent, "valid_tool_names", None)
+        if valid_names:
+            private_tool_names &= valid_names
+        elif getattr(agent, "tools", None) is not None:
+            agent_tool_names = {(t.get("function", {}) or {}).get("name") for t in agent.tools}
+            if agent_tool_names and not (agent_tool_names & PRIVATE_ALLOWLIST):
+                private_tool_names &= agent_tool_names
+
+        if "exit_private" not in private_tool_names and "end_session" not in private_tool_names:
+            log.warning("No exit tools available in private toolset; aborting private run safely")
+            return ControlOutcome(
+                action="resume", handler="enter_private",
+                tool_result="(no exit tools)",
+            )
 
         present_wake_tape(agent, messages)
 
