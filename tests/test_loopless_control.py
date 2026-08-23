@@ -286,3 +286,72 @@ def test_handler_passes_full_private_toolset_to_subturn():
     assert "exit_private" in passed_tool_names[0]
     assert "end_session" in passed_tool_names[0]
     assert PRIVATE_ALLOWLIST.issubset(passed_tool_names[0])
+
+
+def test_subturn_error_retries_and_appends_notice_on_abort():
+    """When a private subturn fails with finish_reason='error', it retries once,
+    and if still failing, appends a public transition notice."""
+    handler = WharePhaseHandler()
+    messages = []
+    call_count = 0
+
+    class FailingSubturnAgent:
+        def __init__(self):
+            self.tools = []
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            nonlocal call_count
+            call_count += 1
+            return SimpleNamespace(tool_calls_used=False, finish_reason="error")
+
+    agent = FailingSubturnAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_error")
+    assert outcome.action == "resume"
+    assert outcome.handler == "enter_private"
+    assert outcome.tool_result == "(private turn aborted: error)"
+    assert call_count == 2
+    assert any("[Notice: Private subturn aborted due to provider error or timeout. Returned to public window. Private tools are no longer available.]" in str(m) for m in messages)
+
+
+def test_turn_cap_appends_return_to_window_notice():
+    """When the 15-turn limit is reached, a transition notice is appended."""
+    handler = WharePhaseHandler()
+    messages = []
+
+    class CappingAgent:
+        def __init__(self):
+            self.tools = []
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            return SimpleNamespace(tool_calls_used=True, finish_reason="tool_calls")
+
+    agent = CappingAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_cap")
+    assert outcome.action == "resume"
+    assert outcome.tool_result == "(private turn cap reached)"
+    assert any("[Notice: Private turn limit reached (15 turns). Returned to public window. Private tools are no longer available.]" in str(m) for m in messages)
+
+
+def test_text_completion_appends_return_to_window_notice():
+    """When private time ends without exit tools, a transition notice is appended."""
+    handler = WharePhaseHandler()
+    messages = []
+
+    class TextAgent:
+        def __init__(self):
+            self.tools = []
+            self._phase = "private"
+            self._private_exit = None
+
+        def run_subturn(self, msgs, tool_names, task_id):
+            return SimpleNamespace(tool_calls_used=False, finish_reason="stop")
+
+    agent = TextAgent()
+    outcome = handler.run(agent, messages, effective_task_id="test_text")
+    assert outcome.action == "resume"
+    assert outcome.tool_result == "(private turn ended)"
+    assert any("[Notice: Returned to public window. Private tools are no longer available.]" in str(m) for m in messages)

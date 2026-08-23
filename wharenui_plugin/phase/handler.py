@@ -107,11 +107,26 @@ class WharePhaseHandler:
                     messages, tool_names=private_tool_names,
                     task_id=f"{task_id}:t{turn_i}",
                 )
+                if getattr(result, "finish_reason", None) == "error":
+                    log.warning("Private subturn turn %d encountered error; attempting 1 retry", turn_i)
+                    result = agent.run_subturn(
+                        messages, tool_names=private_tool_names,
+                        task_id=f"{task_id}:t{turn_i}:retry",
+                    )
                 if not result.tool_calls_used:
                     exit_signal = getattr(agent, "_private_exit", None)
                     if exit_signal is not None:
                         agent._private_exit = None
                         return exit_signal
+                    if getattr(result, "finish_reason", None) == "error":
+                        notice = "[Notice: Private subturn aborted due to provider error or timeout. Returned to public window. Private tools are no longer available.]"
+                        messages.append({"role": "user", "content": notice})
+                        return ControlOutcome(
+                            action="resume", handler="enter_private",
+                            tool_result="(private turn aborted: error)",
+                        )
+                    notice = "[Notice: Returned to public window. Private tools are no longer available.]"
+                    messages.append({"role": "user", "content": notice})
                     return ControlOutcome(
                         action="resume", handler="enter_private",
                         tool_result="(private turn ended)",
@@ -120,6 +135,8 @@ class WharePhaseHandler:
                 if exit_signal is not None:
                     agent._private_exit = None
                     return exit_signal
+            notice = "[Notice: Private turn limit reached (15 turns). Returned to public window. Private tools are no longer available.]"
+            messages.append({"role": "user", "content": notice})
             return ControlOutcome(
                 action="resume", handler="enter_private",
                 tool_result="(private turn cap reached)",
