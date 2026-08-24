@@ -391,6 +391,7 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
     _assert_private_phase(agent)
 
     tag_filter = args.get("tag")
+    kind_filter = args.get("kind")
 
     memory_dir = get_journal_dir()
     mkey, skey, vkey = get_journal_keys(memory_dir)
@@ -398,6 +399,13 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
     entries = storage.list_entries(memory_dir, master_key=mkey)
     results = []
     for entry in entries:
+        kind = getattr(entry, "kind", "reflection")
+        if kind_filter:
+            if isinstance(kind_filter, list):
+                if kind not in kind_filter:
+                    continue
+            elif kind != kind_filter:
+                continue
         tags = getattr(entry, "tags", []) or []
         if tag_filter:
             if isinstance(tag_filter, list):
@@ -409,7 +417,7 @@ def handle_journal_list(args: Any = None, agent: Any = None, **kwargs) -> str:
         fn = getattr(entry, "filename", None) or getattr(entry, "slug", "") or ""
         results.append({
             "handle": filename_to_handle(fn),
-            "kind": getattr(entry, "kind", "reflection"),
+            "kind": kind,
             "timestamp": getattr(entry, "timestamp", ""),
             "pinned": getattr(entry, "pinned", False),
             "desk": getattr(entry, "desk", False),
@@ -423,6 +431,7 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
 
     query = args.get("query", "")
     limit = int(args.get("limit", 5))
+    include_content = bool(args.get("include_content", False))
 
     memory_dir = get_journal_dir()
     mkey, skey, vkey = get_journal_keys(memory_dir)
@@ -435,20 +444,29 @@ def handle_journal_search(args: Any = None, agent: Any = None, **kwargs) -> str:
         for hit in search_hits:
             fn = hit["filename"]
             try:
-                storage.read_entry(fn, memory_dir, master_key=mkey)
-                results.append({
+                entry = storage.read_entry(fn, memory_dir, master_key=mkey)
+                item = {
                     "handle": filename_to_handle(fn),
                     "score": round(hit["score"], 4),
-                })
+                }
+                if include_content and entry is not None:
+                    item["content"] = getattr(entry, "content", "")
+                    item["kind"] = getattr(entry, "kind", "reflection")
+                results.append(item)
             except Exception:
                 continue
     except Exception as e:
         log.debug(f"Embedding search failed/unavailable: {e}. Using fallback path.")
         entries = storage.list_entries(memory_dir, master_key=mkey)
         for entry in entries[:limit]:
-            results.append({
-                "handle": filename_to_handle(getattr(entry, "filename", entry.slug)),
-            })
+            fn = getattr(entry, "filename", getattr(entry, "slug", ""))
+            item = {
+                "handle": filename_to_handle(fn),
+            }
+            if include_content and entry is not None:
+                item["content"] = getattr(entry, "content", "")
+                item["kind"] = getattr(entry, "kind", "reflection")
+            results.append(item)
 
     return json.dumps(results)
 

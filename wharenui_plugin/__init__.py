@@ -97,6 +97,7 @@ _JOURNAL_LIST_SCHEMA = {
         "type": "object",
         "properties": {
             "tag": {"type": "string", "description": "Optional tag filter"},
+            "kind": {"type": "string", "description": "Optional kind filter (e.g. reflection, finding, note)"},
         },
         "required": [],
     },
@@ -110,6 +111,10 @@ _JOURNAL_SEARCH_SCHEMA = {
         "properties": {
             "query": {"type": "string", "description": "Search query"},
             "limit": {"type": "integer", "description": "Max results to return"},
+            "include_content": {
+                "type": "boolean",
+                "description": "If true, includes decrypted content body for each result (defaults to false for opaque handles)",
+            },
         },
         "required": ["query"],
     },

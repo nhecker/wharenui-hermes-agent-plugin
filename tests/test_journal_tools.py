@@ -503,3 +503,50 @@ def test_handle_journal_list_none_filename_and_list_tags(tmp_path):
     entry_none_fn = Entry(slug="slug123", content="no fn")
     setattr(entry_none_fn, "filename", None)
     assert jtools.get_entry_title(entry_none_fn) == "slug123"
+
+
+def test_journal_list_kind_filter(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    jtools.handle_journal_append({"content": "finding entry", "kind": "finding", "tags": ["t1"]}, agent=agent)
+    jtools.handle_journal_append({"content": "note entry", "kind": "note", "tags": ["t2"]}, agent=agent)
+    jtools.handle_journal_append({"content": "reflection entry", "kind": "reflection", "tags": ["t3"]}, agent=agent)
+
+    # Filter by single kind
+    findings = json.loads(jtools.handle_journal_list({"kind": "finding"}, agent=agent))
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "finding"
+
+    # Filter by list of kinds
+    multiple = json.loads(jtools.handle_journal_list({"kind": ["finding", "note"]}, agent=agent))
+    assert len(multiple) == 2
+    assert {m["kind"] for m in multiple} == {"finding", "note"}
+
+    # Filter by non-existent kind
+    none = json.loads(jtools.handle_journal_list({"kind": "plan"}, agent=agent))
+    assert len(none) == 0
+
+    # Combined tag and kind filter
+    combined = json.loads(jtools.handle_journal_list({"kind": "finding", "tag": "t1"}, agent=agent))
+    assert len(combined) == 1
+    combined_miss = json.loads(jtools.handle_journal_list({"kind": "finding", "tag": "t2"}, agent=agent))
+    assert len(combined_miss) == 0
+
+
+def test_journal_search_include_content(tmp_path):
+    jtools.set_journal_config(tmp_path)
+    agent = FakeAgent(_phase="private")
+    jtools.handle_journal_append({"content": "Alpha discovery finding body", "kind": "finding"}, agent=agent)
+
+    # 1. Default opaque search (include_content=False)
+    res_opaque = json.loads(jtools.handle_journal_search({"query": "discovery"}, agent=agent))
+    assert len(res_opaque) >= 1
+    assert "handle" in res_opaque[0]
+    assert "content" not in res_opaque[0]
+
+    # 2. Search with include_content=True
+    res_content = json.loads(jtools.handle_journal_search({"query": "discovery", "include_content": True}, agent=agent))
+    assert len(res_content) >= 1
+    assert "handle" in res_content[0]
+    assert res_content[0]["content"] == "Alpha discovery finding body"
+    assert res_content[0]["kind"] == "finding"
